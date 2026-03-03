@@ -25,9 +25,11 @@
     <nav class="nav-rail">
         <div class="nav-logo" title="AG Mission Control">AG</div>
         <div class="nav-item active" data-panel="projects" onclick="AG.switchNav('projects')" title="Projects">📂</div>
+        <div class="nav-item" data-panel="health" onclick="AG.switchNav('health')" title="Health">💚</div>
+        <div class="nav-item" data-panel="cron" onclick="AG.switchNav('cron')" title="Cron Jobs">⏰</div>
+        <div class="nav-item" data-panel="remotes" onclick="AG.switchNav('remotes')" title="Remotes">🌐</div>
         <div class="nav-item" data-panel="agents" onclick="AG.switchNav('agents')" title="AI Agents">🤖</div>
         <div class="nav-item" data-panel="history" onclick="AG.switchNav('history')" title="History">📋</div>
-        <div class="nav-item" data-panel="docs" onclick="AG.switchNav('docs')" title="Docs">📄</div>
         <div class="nav-spacer"></div>
         <div class="nav-item" data-panel="settings" onclick="AG.switchNav('settings')" title="Settings">⚙️</div>
     </nav>
@@ -104,6 +106,75 @@
             <div class="sidebar-content" style="padding:16px" id="historyList">
                 <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
                     📋 Task history will appear here as you send prompts
+                </p>
+            </div>
+        </div>
+
+        <!-- Health Panel -->
+        <div class="sidebar-section" data-panel="health" style="display:none;flex:1;display:flex;flex-direction:column">
+            <div class="sidebar-header">
+                <div class="sidebar-title">System Health</div>
+                <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.refreshHealth()">🔄 Refresh</button>
+            </div>
+            <div class="sidebar-content" style="padding:12px" id="healthPanel">
+                <div class="health-grid" id="healthGrid">
+                    <div class="health-card">
+                        <div class="health-label">Status</div>
+                        <div class="health-value" id="h-status">⏳</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Instances</div>
+                        <div class="health-value" id="h-instances">0</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Queue</div>
+                        <div class="health-value" id="h-queue">0</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Uptime</div>
+                        <div class="health-value" id="h-uptime">–</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Auto-Accept</div>
+                        <div class="health-value" id="h-autoaccept">off</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Cron Jobs</div>
+                        <div class="health-value" id="h-cron">0</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Remotes</div>
+                        <div class="health-value" id="h-remotes">0</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Stream Clients</div>
+                        <div class="health-value" id="h-stream">0</div>
+                    </div>
+                </div>
+                <div id="healthInstances" style="margin-top:12px"></div>
+            </div>
+        </div>
+
+        <!-- Cron Panel -->
+        <div class="sidebar-section" data-panel="cron" style="display:none;flex:1;display:flex;flex-direction:column">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Cron Jobs</div>
+            </div>
+            <div class="sidebar-content" style="padding:12px" id="cronPanel">
+                <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                    ⏰ Loading cron jobs...
+                </p>
+            </div>
+        </div>
+
+        <!-- Remotes Panel -->
+        <div class="sidebar-section" data-panel="remotes" style="display:none;flex:1;display:flex;flex-direction:column">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Remote Instances</div>
+            </div>
+            <div class="sidebar-content" style="padding:12px" id="remotesPanel">
+                <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                    🌐 Loading remote connections...
                 </p>
             </div>
         </div>

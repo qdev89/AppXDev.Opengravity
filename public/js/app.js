@@ -392,12 +392,125 @@
     function switchNav(panel) {
         activePanel = panel;
         $$('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.panel === panel));
-        // Show/hide sidebar sections based on nav
         $$('.sidebar-section').forEach(s => {
             s.style.display = s.dataset.panel === panel ? 'block' : 'none';
         });
-        // Show right panel for settings
         if (panel === 'settings') toggleRightPanel();
+        // Load data for new panels
+        if (panel === 'health') refreshHealth();
+        if (panel === 'cron') loadCron();
+        if (panel === 'remotes') loadRemotes();
+    }
+
+    // ── Health Panel ──────────────────────────────
+    let healthTimer = null;
+    async function refreshHealth() {
+        try {
+            const res = await fetch('/api/v1/health');
+            const d = await res.json();
+            const hv = (id, val, cls) => {
+                const el = $(id);
+                if (el) { el.textContent = val; el.className = 'health-value' + (cls ? ' ' + cls : ''); }
+            };
+            hv('h-status', d.ok ? '✅ OK' : '❌ Down', d.ok ? 'ok' : 'bad');
+            hv('h-instances', d.instances?.total ?? 0);
+            hv('h-queue', `${d.queue?.pending ?? 0}/${d.queue?.running ?? 0}`);
+            hv('h-uptime', d.uptimeHuman || '–');
+            hv('h-autoaccept', d.autoAccept?.mode ?? 'off', d.autoAccept?.mode === 'all' ? 'ok' : '');
+            hv('h-cron', `${d.cron?.activeJobs ?? 0}/${d.cron?.jobs ?? 0}`);
+            hv('h-remotes', `${d.remotes?.connected ?? 0}/${d.remotes?.total ?? 0}`);
+            hv('h-stream', d.streamClients ?? 0);
+
+            // Instance list
+            const list = $('healthInstances');
+            if (list && d.instances?.list?.length > 0) {
+                list.innerHTML = '<div class="health-label" style="margin-bottom:8px">INSTANCES</div>' +
+                    d.instances.list.map(i => `<div class="cron-card">
+                        <div class="cron-name">${escHtml(i.title || 'Unknown')}</div>
+                        <div class="cron-meta">${i.host}:${i.port} • ${i.phase || 'idle'}</div>
+                    </div>`).join('');
+            } else if (list) {
+                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:8px">No instances connected</div>';
+            }
+        } catch { }
+        // Auto-refresh every 10s while health panel is active
+        if (healthTimer) clearInterval(healthTimer);
+        if (activePanel === 'health') {
+            healthTimer = setInterval(refreshHealth, 10000);
+        }
+    }
+
+    // ── Cron Panel ───────────────────────────────
+    async function loadCron() {
+        const panel = $('cronPanel');
+        if (!panel) return;
+        try {
+            const res = await fetch('/api/v1/cron');
+            const data = await res.json();
+            const jobs = data.jobs || [];
+            if (jobs.length === 0) {
+                panel.innerHTML = '<p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">⏰ No cron jobs configured</p>';
+                return;
+            }
+            panel.innerHTML = jobs.map(j => `<div class="cron-card">
+                <div class="cron-name">${j.enabled !== false ? '🟢' : '🔴'} ${escHtml(j.name)}</div>
+                <div class="cron-meta">${j.schedule} • ${j.instance || 'any'}</div>
+                <div class="cron-meta" style="margin-top:2px">${escHtml((j.prompt || '').substring(0, 80))}</div>
+                <div class="cron-actions">
+                    <button class="mini-btn" onclick="AG.triggerCron('${j.name}')">&#9654; Trigger</button>
+                    <button class="mini-btn" onclick="AG.toggleCronJob('${j.name}', ${j.enabled === false})">${j.enabled !== false ? '⏸ Disable' : '▶ Enable'}</button>
+                </div>
+            </div>`).join('');
+        } catch {
+            panel.innerHTML = '<p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">❌ Failed to load cron jobs</p>';
+        }
+    }
+
+    async function triggerCron(name) {
+        showToast(`⏰ Triggering "${name}"...`);
+        try {
+            const res = await fetch(`/api/v1/cron/${name}/trigger`, { method: 'POST' });
+            const data = await res.json();
+            showToast(data.ok ? `✅ "${name}" triggered` : `❌ ${data.reason}`);
+            loadCron();
+        } catch { showToast('❌ Trigger failed'); }
+    }
+
+    async function toggleCronJob(name, enable) {
+        try {
+            await fetch(`/api/v1/cron/${name}/enabled`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: enable })
+            });
+            showToast(enable ? `▶ "${name}" enabled` : `⏸ "${name}" disabled`);
+            loadCron();
+        } catch { showToast('❌ Toggle failed'); }
+    }
+
+    // ── Remotes Panel ─────────────────────────────
+    async function loadRemotes() {
+        const panel = $('remotesPanel');
+        if (!panel) return;
+        try {
+            const res = await fetch('/api/v1/remotes');
+            const data = await res.json();
+            const remotes = data.remotes || [];
+            if (remotes.length === 0) {
+                panel.innerHTML = '<p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">🌐 No remote instances configured</p>';
+                return;
+            }
+            panel.innerHTML = remotes.map(r => {
+                const statusIcon = { connected: '🟢', disconnected: '🔴', error: '⚠️', unknown: '❓' }[r.status] || '❓';
+                return `<div class="remote-card">
+                    <div class="remote-name">${statusIcon} ${escHtml(r.name)}</div>
+                    <div class="remote-meta">${r.type} • ${r.host || r.project || ''}</div>
+                    ${r.lastCheck ? `<div class="remote-meta">🕒 ${new Date(r.lastCheck).toLocaleTimeString()}</div>` : ''}
+                </div>`;
+            }).join('');
+        } catch {
+            panel.innerHTML = '<p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">❌ Failed to load remotes</p>';
+        }
     }
 
     // ── Toast ──────────────────────────────────────
@@ -458,9 +571,15 @@
             selectCascade, sendMessage, toggleTheme, takeScreenshot, stopAgent,
             showAddWorkspace, closeAddWorkspace, addWorkspace,
             toggleRightPanel, switchNav, toggleSidebar,
-            toggleAutoAccept, clearHistory: () => { taskHistory = []; saveHistory(); renderHistory(); showToast('🗑️ History cleared'); }
+            toggleAutoAccept, refreshHealth, triggerCron, toggleCronJob,
+            clearHistory: () => { taskHistory = []; saveHistory(); renderHistory(); showToast('🗑️ History cleared'); }
         };
     }
 
     document.addEventListener('DOMContentLoaded', init);
+
+    // PWA Service Worker
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => { });
+    }
 })();

@@ -69,20 +69,7 @@ async function main() {
         L.warn(`🔴 Instance disconnected: "${info.title}"`);
     });
 
-    // ── 4. Web Server — dashboard + API ──
-    const web = createWebServer(cdp, monitor, {
-        port: cfg.defaults.port,
-        gateway, // pass gateway for API access
-    });
-
-    // ── 5. Telegram Bot — mobile remote control ──
-    const telegram = new TelegramBot(cdp, monitor, {
-        token: cfg.telegram.token,
-        allowedUsers: cfg.telegram.allowedUsers,
-        gateway, // pass gateway for unified routing
-    });
-
-    // ── 6. Auto-Accept Engine ──
+    // ── 4. Auto-Accept Engine (must be before web server for route registration) ──
     const autoAccept = new AutoAccept(cdp, gateway, {
         mode: cfg.defaults.autoAccept ? 'all' : 'off',
         pollInterval: cfg.defaults.pollInterval,
@@ -92,9 +79,9 @@ async function main() {
         L.info(`🤖 Auto-accepted ${count} dialog(s) on "${title}": ${labels.join(', ')}`);
     });
 
-    // ── 7. Cron Scheduler ──
+    // ── 5. Cron Scheduler (must be before web server for route registration) ──
     const cron = new CronScheduler(gateway, {
-        checkInterval: 60000, // check every minute
+        checkInterval: 60000,
     });
     cron.loadJobs(cfg.cron);
 
@@ -102,17 +89,30 @@ async function main() {
         L.info(`⏰ Cron "${job}" [${trigger}]: ${result.ok ? '✅' : '❌ ' + result.reason}`);
     });
 
-    // Make automation accessible on gateway for API
-    gateway.autoAccept = autoAccept;
-    gateway.cron = cron;
-
-    // ── 8. Remote Bridge — connect to remote Antigravity instances ──
+    // ── 6. Remote Bridge (must be before web server for route registration) ──
     const remoteBridge = new RemoteBridge(cdp, gateway);
     remoteBridge.load(cfg.remotes || []);
-    gateway.remoteBridge = remoteBridge;
 
     remoteBridge.on('remote:status', ({ name, status }) => {
         L.info(`🌐 Remote "${name}" → ${status}`);
+    });
+
+    // Attach to gateway BEFORE web server creation so API routes register
+    gateway.autoAccept = autoAccept;
+    gateway.cron = cron;
+    gateway.remoteBridge = remoteBridge;
+
+    // ── 7. Web Server — dashboard + API ──
+    const web = createWebServer(cdp, monitor, {
+        port: cfg.defaults.port,
+        gateway,
+    });
+
+    // ── 8. Telegram Bot — mobile remote control ──
+    const telegram = new TelegramBot(cdp, monitor, {
+        token: cfg.telegram.token,
+        allowedUsers: cfg.telegram.allowedUsers,
+        gateway,
     });
 
     // ── 9. Health Dashboard ──

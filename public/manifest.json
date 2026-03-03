@@ -1,12 +1,11 @@
 {
-    "name": "AG Mission Control",
-    "short_name": "AG Control",
-    "description": "Remote dashboard for managing Antigravity IDE instances",
+    "name": "Opengravity",
+    "short_name": "OG",
+    "description": "Antigravity-Powered AI Gateway",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#0a0a0f",
-    "theme_color": "#0a0a0f",
-    "orientation": "any",
+    "background_color": "#08080c",
+    "theme_color": "#7c5cfc",
     "icons": [
         {
             "src": "/icons/icon-192.svg",
@@ -14,7 +13,7 @@
             "type": "image/svg+xml"
         },
         {
-            "src": "/icons/icon-192.svg",
+            "src": "/icons/icon-512.svg",
             "sizes": "512x512",
             "type": "image/svg+xml"
         }

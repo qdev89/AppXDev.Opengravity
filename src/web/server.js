@@ -8,7 +8,7 @@ import WebSocket from 'ws';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { createAuthMiddleware, createRateLimiter } from '../api/middleware.js';
+import { createAuthMiddleware, createRateLimiter, registerAuthRoutes } from '../api/middleware.js';
 import { StreamServer } from '../api/stream.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -26,8 +26,12 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
     app.use(express.static(join(__dirname, '../../public'), { maxAge: 0, etag: false }));
 
     // ── API Security Middleware ──
-    app.use(createAuthMiddleware({ apiKey: opts.apiKey || process.env.API_KEY }));
+    app.use(createAuthMiddleware({
+        apiKey: opts.apiKey || process.env.API_KEY,
+        apiSecret: opts.apiSecret || process.env.API_SECRET,
+    }));
     app.use(createRateLimiter({ maxRequests: opts.rateLimit || 120, windowMs: 60000 }));
+    registerAuthRoutes(app);
 
     // ── API: Get cascade list ─────────────────────────
     app.get('/cascades', (req, res) => {

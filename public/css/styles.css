@@ -843,6 +843,81 @@ body {
     }
 }
 
+/* ── Health Grid ────────────────────────── */
+.health-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.health-card {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+}
+
+.health-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.health-value {
+    font-size: 16px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-primary);
+}
+
+.health-value.ok { color: var(--success); }
+.health-value.warn { color: var(--warning); }
+.health-value.bad { color: var(--danger); }
+
+/* Cron & Remote Cards */
+.cron-card, .remote-card {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+}
+
+.cron-card .cron-name, .remote-card .remote-name {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.cron-card .cron-meta, .remote-card .remote-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.cron-card .cron-actions, .remote-card .remote-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.mini-btn {
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+}
+.mini-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 /* ── Scrollbar ──────────────────────────── */
 ::-webkit-scrollbar {
     width: 6px;
