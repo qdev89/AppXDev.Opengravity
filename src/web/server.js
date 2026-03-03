@@ -8,6 +8,8 @@ import WebSocket from 'ws';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createAuthMiddleware, createRateLimiter } from '../api/middleware.js';
+import { StreamServer } from '../api/stream.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -16,10 +18,16 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
     const gateway = opts.gateway || null; // Gateway orchestrator (Phase 1)
     const app = express();
     const server = http.createServer(app);
-    const wss = new WebSocketServer({ server });
+    // If gateway exists, use noServer mode so we can route upgrade requests
+    // between dashboard WS and API stream WS. Otherwise, attach directly.
+    const wss = new WebSocketServer(gateway ? { noServer: true } : { server });
 
     app.use(express.json());
     app.use(express.static(join(__dirname, '../../public'), { maxAge: 0, etag: false }));
+
+    // ── API Security Middleware ──
+    app.use(createAuthMiddleware({ apiKey: opts.apiKey || process.env.API_KEY }));
+    app.use(createRateLimiter({ maxRequests: opts.rateLimit || 120, windowMs: 60000 }));
 
     // ── API: Get cascade list ─────────────────────────
     app.get('/cascades', (req, res) => {
@@ -367,11 +375,36 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
             });
         });
     }
+    // ── API Streaming WebSocket ──────────────────────
+    let streamServer = null;
+    if (gateway) {
+        // Separate WSS for /api/v1/stream on the same HTTP server
+        const streamWss = new WebSocketServer({ noServer: true });
+
+        server.on('upgrade', (request, socket, head) => {
+            const url = new URL(request.url, `http://${request.headers.host}`);
+            if (url.pathname === '/api/v1/stream') {
+                streamWss.handleUpgrade(request, socket, head, (ws) => {
+                    streamWss.emit('connection', ws, request);
+                });
+            } else {
+                // Let the existing WSS handle dashboard connections
+                wss.handleUpgrade(request, socket, head, (ws) => {
+                    wss.emit('connection', ws, request);
+                });
+            }
+        });
+
+        streamServer = new StreamServer(streamWss, gateway);
+    }
 
     // ── Start ─────────────────────────────────────────
     server.listen(port, '0.0.0.0', () => {
         console.log(`🌐 Web viewer: http://localhost:${port}`);
+        if (streamServer) {
+            console.log(`📡 API stream: ws://localhost:${port}/api/v1/stream`);
+        }
     });
 
-    return { app, server, wss, broadcast };
+    return { app, server, wss, broadcast, streamServer };
 }
