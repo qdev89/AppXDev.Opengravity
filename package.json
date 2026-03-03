@@ -2,7 +2,7 @@
     "name": "opengravity",
     "version": "3.0.0",
     "type": "module",
-    "description": "Antigravity-Powered AI Gateway — multi-channel remote control with session management, routing, and task queue",
+    "description": "Antigravity-Powered AI Gateway — REST API, WebSocket streaming, automation, remote control for AI coding agents",
     "main": "server.js",
     "bin": {
         "opengravity": "server.js"
@@ -13,14 +13,23 @@
     },
     "keywords": [
         "antigravity",
-        "telegram-bot",
+        "ai-gateway",
+        "ai-coding",
         "cdp",
         "chrome-devtools-protocol",
-        "ai-coding",
         "remote-control",
+        "telegram-bot",
         "developer-tools",
-        "grammy"
+        "automation",
+        "websocket",
+        "api"
     ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/AppXDev/Opengravity.git"
+    },
+    "license": "MIT",
+    "homepage": "https://github.com/AppXDev/Opengravity#readme",
     "dependencies": {
         "dotenv": "^17.0.0",
         "express": "^4.18.2",
