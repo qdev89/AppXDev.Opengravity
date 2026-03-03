@@ -294,6 +294,31 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
                 res.json({ ok });
             });
         }
+
+        // ── Distribution: Remote Bridge ──
+        if (gateway.remoteBridge) {
+            app.get('/api/v1/remotes', (req, res) => {
+                res.json({ remotes: gateway.remoteBridge.list() });
+            });
+
+            app.get('/api/v1/remotes/stats', (req, res) => {
+                res.json(gateway.remoteBridge.stats());
+            });
+
+            app.post('/api/v1/remotes/:name/send', async (req, res) => {
+                const { prompt } = req.body;
+                if (!prompt) return res.status(400).json({ ok: false, reason: 'No prompt' });
+                const result = await gateway.remoteBridge.sendViaFirebase(
+                    req.params.name, prompt, { ip: req.ip }
+                );
+                res.json(result);
+            });
+
+            app.get('/api/v1/remotes/:name/completed', async (req, res) => {
+                const completed = await gateway.remoteBridge.pollFirebaseCompleted(req.params.name);
+                res.json({ completed });
+            });
+        }
     }
 
     // ── API: Get status ───────────────────────────────

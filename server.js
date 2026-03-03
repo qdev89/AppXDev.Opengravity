@@ -17,6 +17,8 @@ import { createWebServer } from './src/web/server.js';
 import { TelegramBot } from './src/bot/telegram.js';
 import { AutoAccept } from './src/automation/auto-accept.js';
 import { CronScheduler } from './src/automation/cron.js';
+import { RemoteBridge } from './src/distribution/remote.js';
+import { HealthDashboard } from './src/distribution/health.js';
 
 const L = log.scope('main');
 
@@ -104,12 +106,31 @@ async function main() {
     gateway.autoAccept = autoAccept;
     gateway.cron = cron;
 
+    // ── 8. Remote Bridge — connect to remote Antigravity instances ──
+    const remoteBridge = new RemoteBridge(cdp, gateway);
+    remoteBridge.load(cfg.remotes || []);
+    gateway.remoteBridge = remoteBridge;
+
+    remoteBridge.on('remote:status', ({ name, status }) => {
+        L.info(`🌐 Remote "${name}" → ${status}`);
+    });
+
+    // ── 9. Health Dashboard ──
+    const health = new HealthDashboard(gateway);
+    health.registerRoutes(web.app);
+
+    // Track stream client count for health report
+    if (web.streamServer) {
+        gateway._streamClientCount = () => web.streamServer.clientCount();
+    }
+
     // ── Start everything ──
     cdp.start();
     monitor.start();
     gateway.startProcessing();
     autoAccept.start();
     cron.start();
+    remoteBridge.start();
     await telegram.start();
 
     // Report config
@@ -118,6 +139,10 @@ async function main() {
         L.info(`Registered instances: ${instances.map(i => `${i.name}(:${i.port})`).join(', ')}`);
     }
     L.info(`Scanning CDP ports: ${cdpTargets.map(t => `${t.host}:${t.port}`).join(', ')}`);
+    const remoteCount = (cfg.remotes || []).length;
+    if (remoteCount > 0) {
+        L.info(`Remote bridges: ${remoteCount} configured`);
+    }
 
     // ── Graceful shutdown ──
     const shutdown = () => {
@@ -125,7 +150,9 @@ async function main() {
         telegram.stop();
         cron.stop();
         autoAccept.stop();
+        remoteBridge.stop();
         gateway.stopProcessing();
+        if (web.streamServer) web.streamServer.stop();
         monitor.stop();
         cdp.stop();
         web.server.close();
