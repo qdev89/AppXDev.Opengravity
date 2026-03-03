@@ -181,7 +181,6 @@
     }
 
     // ── Send ───────────────────────────────────────
-    let isSending = false;
     async function sendMessage() {
         if (isSending) return;
         const input = $('messageInput');
@@ -194,28 +193,21 @@
         if (btn) btn.disabled = true;
         showToast('📤 Sending...');
         try {
-            // Request notification permission (non-blocking)
             if ('Notification' in window && Notification.permission === 'default') {
                 Notification.requestPermission().catch(() => { });
             }
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 15000);
-            const url = `/send/${currentCascadeId}`;
-            console.log('[AG] Sending to', url, text.substring(0, 50));
-            const res = await fetch(url, {
+            // Use Gateway API for unified routing
+            const res = await fetch('/api/v1/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text }),
+                body: JSON.stringify({ prompt: text, target: currentCascadeId, source: 'dashboard' }),
                 signal: controller.signal
             });
             clearTimeout(timeout);
-            console.log('[AG] Response status:', res.status);
-            const raw = await res.text();
-            console.log('[AG] Response body:', raw.substring(0, 200));
-            let data;
-            try { data = JSON.parse(raw); } catch { data = { ok: false, reason: raw.substring(0, 100) }; }
+            const data = await res.json();
             if (data.ok) {
-                // Track in history
                 messagesSent++;
                 const projectName = shortTitle((cascades.find(c => c.id === currentCascadeId) || {}).title) || 'Unknown';
                 addToHistory(text, currentCascadeId, projectName);
@@ -223,13 +215,14 @@
                 input.style.height = 'auto';
                 showToast('✅ Sent!');
                 updateStats();
+            } else if (data.queued) {
+                showToast(`📋 Queued (position ${data.position || '?'})`);
             } else {
                 showToast(`❌ ${data.reason || 'Send failed'}`);
             }
         } catch (err) {
             const msg = err.name === 'AbortError' ? 'Request timed out (15s)' : (err.message || 'Connection error');
             showToast('❌ ' + msg);
-            console.error('[AG] Send error:', err);
         }
         if (btn) btn.disabled = false;
         isSending = false;
@@ -298,29 +291,20 @@
     }
 
     // ── Auto-Accept (Turbo Mode) ──────────────────
-    function toggleAutoAccept() {
+    async function toggleAutoAccept() {
         autoAcceptEnabled = !autoAcceptEnabled;
         localStorage.setItem('ag-auto-accept', autoAcceptEnabled);
         const badge = $('autoAcceptBadge');
         if (badge) badge.textContent = autoAcceptEnabled ? '🟢 ON' : '🔴 OFF';
-        showToast(autoAcceptEnabled ? '🤖 Auto-Accept ON — confirmations will be auto-approved' : '⏸️ Auto-Accept OFF');
-        if (autoAcceptEnabled) startAutoAccept();
-        else stopAutoAccept();
-    }
-
-    function startAutoAccept() {
-        stopAutoAccept();
-        if (!autoAcceptEnabled) return;
-        autoAcceptTimer = setInterval(async () => {
-            if (!currentCascadeId) return;
-            try {
-                await fetch(`/autoaccept/${currentCascadeId}`, { method: 'POST' });
-            } catch { }
-        }, 2000);
-    }
-
-    function stopAutoAccept() {
-        if (autoAcceptTimer) { clearInterval(autoAcceptTimer); autoAcceptTimer = null; }
+        showToast(autoAcceptEnabled ? '🤖 Auto-Accept ON' : '⏸️ Auto-Accept OFF');
+        // Use Gateway API
+        try {
+            await fetch('/api/v1/auto-accept/mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: autoAcceptEnabled ? 'all' : 'off' })
+            });
+        } catch { }
     }
 
     // ── Actions ────────────────────────────────────
@@ -342,7 +326,8 @@
     async function stopAgent() {
         if (!currentCascadeId) return;
         try {
-            await fetch(`/stop/${currentCascadeId}`, { method: 'POST' });
+            // Use Gateway API
+            await fetch(`/api/v1/stop/${currentCascadeId}`, { method: 'POST' });
             showToast('🛑 Stop signal sent');
         } catch { showToast('❌ Stop failed'); }
     }

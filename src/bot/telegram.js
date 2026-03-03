@@ -9,12 +9,12 @@ export class TelegramBot {
     constructor(cdpManager, responseMonitor, opts = {}) {
         this.cdp = cdpManager;
         this.monitor = responseMonitor;
+        this.gateway = opts.gateway || null;
         this.token = opts.token || process.env.TELEGRAM_BOT_TOKEN;
         this.allowedUsers = (opts.allowedUsers || process.env.ALLOWED_USER_IDS || '')
             .split(',')
             .map(id => parseInt(id.trim()))
             .filter(id => !isNaN(id));
-        this.autoAccept = false;
         this.bot = null;
         this._activeCascadeId = null; // track which cascade Telegram controls
     }
@@ -46,20 +46,39 @@ export class TelegramBot {
             const text = ctx.message.text;
             if (text.startsWith('/')) return; // already handled by commands
 
-            // Natural language → inject into Antigravity
-            const cascade = this._getTargetCascade();
-            if (!cascade) {
-                await ctx.reply('❌ No Antigravity connection. Make sure Antigravity is running with --remote-debugging-port=9000');
+            // Route through Gateway if available
+            if (this.gateway) {
+                const target = this._activeCascadeId || null;
+                await ctx.reply('📤 Sending via Gateway...');
+                const result = await this.gateway.send({
+                    prompt: text,
+                    target,
+                    source: 'telegram',
+                    metadata: { userId: ctx.from.id, username: ctx.from.username },
+                });
+                if (result.ok) {
+                    const title = result.cascade?.title || 'Antigravity';
+                    await ctx.reply(`✅ Sent to "${title}"`);
+                } else if (result.queued) {
+                    await ctx.reply(`📋 Queued (position ${result.position || '?'})`);
+                } else {
+                    await ctx.reply(`❌ ${result.reason || 'Failed'}`);
+                }
                 return;
             }
 
+            // Fallback: direct CDP
+            const cascade = this._getTargetCascade();
+            if (!cascade) {
+                await ctx.reply('❌ No Antigravity connection');
+                return;
+            }
             await ctx.reply(`📤 Sending to ${cascade.metadata.chatTitle}...`);
-
             const result = await this.cdp.injectMessage(cascade.cdp, text);
             if (result.ok) {
-                await ctx.reply('✅ Message sent! Monitoring response...');
+                await ctx.reply('✅ Message sent!');
             } else {
-                await ctx.reply(`❌ Failed to send: ${result.reason || 'unknown error'}`);
+                await ctx.reply(`❌ Failed: ${result.reason || 'unknown'}`);
             }
         });
 
@@ -262,17 +281,24 @@ export class TelegramBot {
 
         // /stop
         this.bot.command('stop', async (ctx) => {
+            // Use gateway.stop() if available
+            if (this.gateway) {
+                const target = this._activeCascadeId || null;
+                const result = await this.gateway.stop(target);
+                await ctx.reply(result.ok ? '🛑 Stop signal sent' : `❌ ${result.reason}`);
+                return;
+            }
+
+            // Fallback: direct CDP
             const cascade = this._getTargetCascade();
             if (!cascade) {
                 await ctx.reply('❌ No Antigravity connection');
                 return;
             }
-
-            // Press Escape or click stop button via CDP
             try {
                 await cascade.cdp.call('Runtime.evaluate', {
                     expression: `(() => {
-                        const stopBtn = document.querySelector('button[aria-label*="Stop"], button[aria-label*="Cancel"], button[class*="stop"]');
+                        const stopBtn = document.querySelector('button[aria-label*="Stop"], button[aria-label*="Cancel"]');
                         if (stopBtn) { stopBtn.click(); return 'clicked'; }
                         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
                         return 'escape';
@@ -288,8 +314,14 @@ export class TelegramBot {
 
         // /autoaccept
         this.bot.command('autoaccept', async (ctx) => {
-            this.autoAccept = !this.autoAccept;
-            await ctx.reply(`Auto-accept: ${this.autoAccept ? '✅ ON' : '❌ OFF'}`);
+            if (this.gateway?.autoAccept) {
+                const aa = this.gateway.autoAccept;
+                const newMode = aa.mode === 'off' ? 'all' : 'off';
+                aa.setMode(newMode);
+                await ctx.reply(`Auto-accept: ${newMode === 'all' ? '✅ ON (all instances)' : '❌ OFF'}`);
+            } else {
+                await ctx.reply('❌ Auto-accept engine not available');
+            }
         });
 
         // /probe — diagnostic: inspect DOM structure
