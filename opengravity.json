@@ -1,0 +1,17 @@
+{
+  "instances": [],
+  "defaults": {
+    "autoAccept": false,
+    "pollInterval": 2000,
+    "discoveryInterval": 10000,
+    "monitorInterval": 2000,
+    "maxQueueSize": 50,
+    "port": 3000
+  },
+  "cdpPorts": [9000, 9001, 9002, 9003],
+  "cron": [],
+  "telegram": {
+    "token": "",
+    "allowedUsers": ""
+  }
+}

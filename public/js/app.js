@@ -1,0 +1,481 @@
+/* AG Mission Control — App Logic */
+(function () {
+    // ── State ──────────────────────────────────────
+    let cascades = [];
+    let currentCascadeId = null;
+    let ws = null;
+    let phaseMap = {};
+    let notificationsEnabled = false;
+    let refreshTimer = null;
+    let activePanel = 'projects';
+    let taskHistory = JSON.parse(localStorage.getItem('ag-task-history') || '[]');
+    let autoAcceptEnabled = localStorage.getItem('ag-auto-accept') === 'true';
+    let autoAcceptTimer = null;
+    let messagesSent = 0;
+    let tasksCompleted = 0;
+
+    const $ = id => document.getElementById(id);
+    const $$ = sel => document.querySelectorAll(sel);
+
+    // ── Theme ──────────────────────────────────────
+    function initTheme() {
+        const saved = localStorage.getItem('ag-theme');
+        const theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        setTheme(theme);
+    }
+    function setTheme(t) {
+        document.documentElement.setAttribute('data-theme', t);
+        localStorage.setItem('ag-theme', t);
+        const btn = $('themeToggle');
+        if (btn) btn.textContent = t === 'dark' ? '🌙' : '☀️';
+    }
+    function toggleTheme() {
+        setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    }
+
+    // ── Notifications ──────────────────────────────
+    function requestNotifications() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(p => { notificationsEnabled = (p === 'granted'); });
+        } else notificationsEnabled = (Notification.permission === 'granted');
+    }
+    function playSound() {
+        try {
+            const ctx = new AudioContext(), osc = ctx.createOscillator(), g = ctx.createGain();
+            osc.connect(g); g.connect(ctx.destination);
+            osc.frequency.value = 880; osc.type = 'sine';
+            g.gain.setValueAtTime(0.3, ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+            osc.start(); osc.stop(ctx.currentTime + 0.3);
+        } catch { }
+    }
+    function getPhase(id) { return phaseMap[id || currentCascadeId] || 'idle'; }
+
+    // ── WebSocket ──────────────────────────────────
+    function connect() {
+        ws = new WebSocket(`ws://${location.host}`);
+        ws.onopen = () => {
+            $('connectionBadge').classList.remove('disconnected');
+            $('connectionBadge').querySelector('span').textContent = 'Connected';
+        };
+        ws.onclose = () => {
+            $('connectionBadge').classList.add('disconnected');
+            $('connectionBadge').querySelector('span').textContent = 'Reconnecting...';
+            setTimeout(connect, 2000);
+        };
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'cascade_list') {
+                cascades = data.cascades;
+                renderCascadeList();
+                if (!currentCascadeId && cascades.length > 0) selectCascade(cascades[0].id);
+            }
+            if (data.type === 'snapshot_update' && data.cascadeId === currentCascadeId) {
+                updateChat(currentCascadeId);
+            }
+            if (data.type === 'phase_change') {
+                updatePhase(data.phase, data.cascadeId, data.title);
+            }
+        };
+    }
+
+    // ── Cascade List ───────────────────────────────
+    function renderCascadeList() {
+        const list = $('cascadeList');
+        if (!list) return;
+        if (cascades.length === 0) {
+            list.innerHTML = `<div class="empty-state" style="padding:30px"><div class="icon">🔍</div>
+                <h3>No workspaces found</h3>
+                <p>Launch Antigravity with<br><code>--remote-debugging-port=9000</code></p></div>`;
+            return;
+        }
+        list.innerHTML = cascades.map(c => {
+            const active = c.id === currentCascadeId;
+            const phase = getPhase(c.id);
+            const name = shortTitle(c.title);
+            const emoji = { idle: '', streaming: '⚡', complete: '✅' };
+            return `<div class="ws-item ${active ? 'active' : ''}" onclick="window.AG.selectCascade('${c.id}')">
+                <div class="ws-dot ${phase}"></div>
+                <div class="ws-info">
+                    <div class="ws-name">${name} ${emoji[phase] || ''}</div>
+                    <div class="ws-meta">${c.window || 'Port ' + (c.port || '9000')}</div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function shortTitle(title) {
+        if (!title) return 'Untitled';
+        return title.split(' - ')[0] || title;
+    }
+
+    // ── Cascade Actions ────────────────────────────
+    function selectCascade(id) {
+        currentCascadeId = id;
+        renderCascadeList();
+        loadCascade(id);
+        // Close sidebar on mobile
+        document.querySelector('.sidebar')?.classList.remove('open');
+    }
+
+    async function loadCascade(id) {
+        const c = cascades.find(x => x.id === id);
+        $('topbarTitle').textContent = c ? shortTitle(c.title) : 'AG Mission Control';
+        $('topbarSubtitle').textContent = c ? (c.window || '') : '';
+        try {
+            const sr = await fetch(`/styles/${id}`);
+            if (sr.ok) {
+                const sd = await sr.json();
+                const el = $('cascadeStyle');
+                if (el) el.textContent = sd.css;
+            }
+            await updateChat(id);
+        } catch (e) { console.error(e); }
+    }
+
+    async function updateChat(id) {
+        try {
+            const res = await fetch(`/snapshot/${id}`);
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            const chatArea = $('chatArea');
+            const chatContent = $('chatContent');
+            if (!chatArea || !chatContent) return;
+            const atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < 80;
+            chatContent.innerHTML = `<div class="chat-mirror">${data.html}</div>`;
+            if (atBottom) requestAnimationFrame(() => chatArea.scrollTop = chatArea.scrollHeight);
+        } catch { }
+    }
+
+    // ── Phase ──────────────────────────────────────
+    function updatePhase(phase, cascadeId, title) {
+        if (cascadeId) phaseMap[cascadeId] = phase;
+        if (!cascadeId || cascadeId === currentCascadeId) {
+            const badge = $('statusBadge');
+            const text = $('statusText');
+            if (badge) badge.className = `status-badge ${phase}`;
+            const labels = { idle: '💤 Idle', streaming: '⚡ Streaming', complete: '✅ Complete' };
+            if (text) text.textContent = labels[phase] || phase;
+        }
+        renderCascadeList();
+        if (phase === 'complete') {
+            tasksCompleted++;
+            const name = title || shortTitle((cascades.find(c => c.id === cascadeId) || {}).title) || 'Antigravity';
+            showToast(`✅ ${name} — Task complete`);
+            playSound();
+            if (notificationsEnabled && document.hidden) {
+                new Notification('AG Mission Control', { body: `✅ ${name} — Task complete`, tag: 'ag-' + cascadeId });
+            }
+            // Update task history — mark latest task for this cascade as complete
+            const historyTask = taskHistory.find(t => t.cascadeId === cascadeId && t.status === 'running');
+            if (historyTask) {
+                historyTask.status = 'complete';
+                historyTask.completedAt = new Date().toISOString();
+                saveHistory();
+                renderHistory();
+            }
+            updateStats();
+        }
+        if (phase === 'streaming' && cascadeId === currentCascadeId) showToast('⚡ Agent started...');
+        startAutoRefresh();
+    }
+
+    // ── Send ───────────────────────────────────────
+    let isSending = false;
+    async function sendMessage() {
+        if (isSending) return;
+        const input = $('messageInput');
+        const btn = $('sendBtn');
+        if (!input) { showToast('❌ Input not found'); return; }
+        if (!currentCascadeId) { showToast('❌ No project selected'); return; }
+        const text = input.value.trim();
+        if (!text) return;
+        isSending = true;
+        if (btn) btn.disabled = true;
+        showToast('📤 Sending...');
+        try {
+            // Request notification permission (non-blocking)
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission().catch(() => { });
+            }
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            const url = `/send/${currentCascadeId}`;
+            console.log('[AG] Sending to', url, text.substring(0, 50));
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text }),
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+            console.log('[AG] Response status:', res.status);
+            const raw = await res.text();
+            console.log('[AG] Response body:', raw.substring(0, 200));
+            let data;
+            try { data = JSON.parse(raw); } catch { data = { ok: false, reason: raw.substring(0, 100) }; }
+            if (data.ok) {
+                // Track in history
+                messagesSent++;
+                const projectName = shortTitle((cascades.find(c => c.id === currentCascadeId) || {}).title) || 'Unknown';
+                addToHistory(text, currentCascadeId, projectName);
+                input.value = '';
+                input.style.height = 'auto';
+                showToast('✅ Sent!');
+                updateStats();
+            } else {
+                showToast(`❌ ${data.reason || 'Send failed'}`);
+            }
+        } catch (err) {
+            const msg = err.name === 'AbortError' ? 'Request timed out (15s)' : (err.message || 'Connection error');
+            showToast('❌ ' + msg);
+            console.error('[AG] Send error:', err);
+        }
+        if (btn) btn.disabled = false;
+        isSending = false;
+    }
+
+    // ── Task History ──────────────────────────────
+    function addToHistory(message, cascadeId, projectName) {
+        taskHistory.unshift({
+            id: Date.now(),
+            message: message.substring(0, 500),
+            cascadeId,
+            project: projectName,
+            status: 'running',
+            sentAt: new Date().toISOString(),
+            completedAt: null
+        });
+        // Keep last 50 tasks
+        if (taskHistory.length > 50) taskHistory = taskHistory.slice(0, 50);
+        saveHistory();
+        renderHistory();
+    }
+
+    function saveHistory() {
+        localStorage.setItem('ag-task-history', JSON.stringify(taskHistory));
+    }
+
+    function renderHistory() {
+        const list = $('historyList');
+        if (!list) return;
+        if (taskHistory.length === 0) {
+            list.innerHTML = `<p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                📋 Task history will appear here as you send prompts</p>`;
+            return;
+        }
+        list.innerHTML = taskHistory.map(t => {
+            const time = new Date(t.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const statusIcon = { running: '⚡', complete: '✅', error: '❌' }[t.status] || '❓';
+            const duration = t.completedAt ? formatDuration(new Date(t.completedAt) - new Date(t.sentAt)) : '';
+            return `<div class="ws-item" style="flex-direction:column;gap:4px;cursor:pointer" onclick="document.getElementById('messageInput').value='${t.message.replace(/'/g, '\\&#39;')}';AG.switchNav('projects')">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span class="ws-name" style="font-size:12px">${statusIcon} ${t.project}</span>
+                    <span class="ws-meta">${time} ${duration ? '• ' + duration : ''}</span>
+                </div>
+                <div class="ws-meta" style="font-size:11px;opacity:0.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.message)}</div>
+            </div>`;
+        }).join('');
+    }
+
+    function formatDuration(ms) {
+        if (ms < 1000) return '';
+        const s = Math.floor(ms / 1000);
+        if (s < 60) return `${s}s`;
+        const m = Math.floor(s / 60);
+        return `${m}m${s % 60}s`;
+    }
+
+    function escHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function updateStats() {
+        const sent = document.querySelector('.panel-row:nth-child(2) .panel-value');
+        const completed = document.querySelector('.panel-row:nth-child(3) .panel-value');
+        if (sent) sent.textContent = messagesSent;
+        if (completed) completed.textContent = tasksCompleted;
+    }
+
+    // ── Auto-Accept (Turbo Mode) ──────────────────
+    function toggleAutoAccept() {
+        autoAcceptEnabled = !autoAcceptEnabled;
+        localStorage.setItem('ag-auto-accept', autoAcceptEnabled);
+        const badge = $('autoAcceptBadge');
+        if (badge) badge.textContent = autoAcceptEnabled ? '🟢 ON' : '🔴 OFF';
+        showToast(autoAcceptEnabled ? '🤖 Auto-Accept ON — confirmations will be auto-approved' : '⏸️ Auto-Accept OFF');
+        if (autoAcceptEnabled) startAutoAccept();
+        else stopAutoAccept();
+    }
+
+    function startAutoAccept() {
+        stopAutoAccept();
+        if (!autoAcceptEnabled) return;
+        autoAcceptTimer = setInterval(async () => {
+            if (!currentCascadeId) return;
+            try {
+                await fetch(`/autoaccept/${currentCascadeId}`, { method: 'POST' });
+            } catch { }
+        }, 2000);
+    }
+
+    function stopAutoAccept() {
+        if (autoAcceptTimer) { clearInterval(autoAcceptTimer); autoAcceptTimer = null; }
+    }
+
+    // ── Actions ────────────────────────────────────
+    async function takeScreenshot() {
+        if (!currentCascadeId) return;
+        showToast('📸 Capturing...');
+        try {
+            const res = await fetch(`/screenshot/${currentCascadeId}`);
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const w = window.open('', '_blank', 'width=800,height=600');
+                w.document.write(`<img src="${url}" style="max-width:100%;height:auto">`);
+                showToast('📸 Screenshot ready');
+            }
+        } catch { showToast('❌ Screenshot failed'); }
+    }
+
+    async function stopAgent() {
+        if (!currentCascadeId) return;
+        try {
+            await fetch(`/stop/${currentCascadeId}`, { method: 'POST' });
+            showToast('🛑 Stop signal sent');
+        } catch { showToast('❌ Stop failed'); }
+    }
+
+    // ── Settings Panel ─────────────────────────────
+    function toggleRightPanel() {
+        const panel = $('rightPanel');
+        if (panel) panel.classList.toggle('open');
+    }
+
+    // ── Add Workspace Modal ────────────────────────
+    function showAddWorkspace() {
+        const modal = $('addWsModal');
+        if (modal) modal.classList.add('open');
+    }
+    function closeAddWorkspace() {
+        const modal = $('addWsModal');
+        if (modal) modal.classList.remove('open');
+    }
+    async function addWorkspace() {
+        const host = $('wsHost')?.value?.trim() || 'localhost';
+        const port = parseInt($('wsPort')?.value) || 9001;
+        const name = $('wsName')?.value?.trim() || '';
+        closeAddWorkspace();
+        showToast(`🔍 Scanning ${host}:${port}...`);
+        try {
+            const res = await fetch('/workspace/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port, name })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                showToast(data.isNew ? `✅ Added ${host}:${port} — scanning for AG instances` : `ℹ️ Already scanning ${host}:${port}`);
+                // Save to localStorage for persistence
+                const saved = JSON.parse(localStorage.getItem('ag-extra-ports') || '[]');
+                if (!saved.find(s => s.host === host && s.port === port)) {
+                    saved.push({ host, port, name });
+                    localStorage.setItem('ag-extra-ports', JSON.stringify(saved));
+                }
+            } else {
+                showToast(`❌ ${data.reason || 'Failed to add'}`);
+            }
+        } catch (err) {
+            showToast('❌ ' + (err.message || 'Connection error'));
+        }
+    }
+
+    // Restore saved extra ports on load
+    function restoreSavedPorts() {
+        const saved = JSON.parse(localStorage.getItem('ag-extra-ports') || '[]');
+        for (const s of saved) {
+            fetch('/workspace/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host: s.host, port: s.port })
+            }).catch(() => { });
+        }
+    }
+
+    // ── Nav ────────────────────────────────────────
+    function switchNav(panel) {
+        activePanel = panel;
+        $$('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.panel === panel));
+        // Show/hide sidebar sections based on nav
+        $$('.sidebar-section').forEach(s => {
+            s.style.display = s.dataset.panel === panel ? 'block' : 'none';
+        });
+        // Show right panel for settings
+        if (panel === 'settings') toggleRightPanel();
+    }
+
+    // ── Toast ──────────────────────────────────────
+    function showToast(msg) {
+        const container = $('toastContainer');
+        if (!container) return;
+        const t = document.createElement('div');
+        t.className = 'toast';
+        t.textContent = msg;
+        container.appendChild(t);
+        setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+    }
+
+    // ── Auto Refresh ───────────────────────────────
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        const p = getPhase(currentCascadeId);
+        refreshTimer = setInterval(() => { if (currentCascadeId) updateChat(currentCascadeId); }, p === 'streaming' ? 2000 : 5000);
+    }
+    function stopAutoRefresh() { if (refreshTimer) clearInterval(refreshTimer); }
+
+    // ── Mobile ─────────────────────────────────────
+    function toggleSidebar() {
+        document.querySelector('.sidebar')?.classList.toggle('open');
+    }
+
+    // ── Init ───────────────────────────────────────
+    function init() {
+        initTheme();
+        requestNotifications();
+        restoreSavedPorts();
+        connect();
+        startAutoRefresh();
+        renderHistory();
+        if (autoAcceptEnabled) startAutoAccept();
+        // Update auto-accept badge
+        const badge = $('autoAcceptBadge');
+        if (badge) badge.textContent = autoAcceptEnabled ? '🟢 ON' : '🔴 OFF';
+
+        // Event listeners (onclick on HTML handles mobile fallback)
+        const sendBtn = $('sendBtn');
+        const msgInput = $('messageInput');
+        if (sendBtn) {
+            sendBtn.addEventListener('click', sendMessage);
+        }
+        if (msgInput) {
+            msgInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+            });
+            msgInput.addEventListener('input', function () {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+        }
+
+        // Expose API (including sendMessage for onclick fallback)
+        window.AG = {
+            selectCascade, sendMessage, toggleTheme, takeScreenshot, stopAgent,
+            showAddWorkspace, closeAddWorkspace, addWorkspace,
+            toggleRightPanel, switchNav, toggleSidebar,
+            toggleAutoAccept, clearHistory: () => { taskHistory = []; saveHistory(); renderHistory(); showToast('🗑️ History cleared'); }
+        };
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+})();
