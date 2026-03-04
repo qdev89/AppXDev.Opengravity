@@ -156,6 +156,10 @@
                         <div class="fleet-preview">${c.host}:${c.port}</div>
                         ${folderDisplay}
                     </div>
+                    <div class="fleet-actions">
+                        <button class="fleet-run-btn" onclick="event.stopPropagation();window.AG.launchAgent('${c.host}',${c.port},'${escHtml(c.name || '')}','${escHtml(c.folder || '')}')" title="Launch Antigravity">▶</button>
+                        <button class="fleet-remove-btn" onclick="event.stopPropagation();window.AG.removePending('${c.host}',${c.port})" title="Remove">✕</button>
+                    </div>
                 </div>`;
             }
 
@@ -900,6 +904,37 @@
         if ($('agentPort')) $('agentPort').value = '9001';
     }
 
+    // ── Launch / Remove Pending Agents ────────────────
+    async function launchAgent(host, port, name, folder) {
+        showToast(`🚀 Launching ${name || 'Antigravity'} on port ${port}...`);
+        try {
+            const res = await fetch('/workspace/launch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port: parseInt(port), name, folder })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                showToast(`✅ ${data.message}`);
+            } else {
+                showToast(`❌ ${data.message}`);
+            }
+        } catch (err) {
+            showToast(`❌ Launch failed: ${err.message}`);
+        }
+    }
+
+    function removePending(host, port) {
+        pendingAgents = pendingAgents.filter(p => !(p.host === host && p.port === port));
+        localStorage.setItem('ag-pending-agents', JSON.stringify(pendingAgents));
+        // Also remove from extra ports
+        const saved = JSON.parse(localStorage.getItem('ag-extra-ports') || '[]');
+        const filtered = saved.filter(s => !(s.host === host && s.port === port));
+        localStorage.setItem('ag-extra-ports', JSON.stringify(filtered));
+        renderFleet();
+        showToast(`🗑️ Removed ${host}:${port}`);
+    }
+
     // ── Bulk Scan ──────────────────────────────────
     async function bulkScan() {
         const host = prompt('Host to scan:', 'localhost');
@@ -1283,7 +1318,7 @@
         // Expose API
         window.AG = {
             selectAgent, sendMessage, toggleTheme, takeScreenshot, stopAgent,
-            showAddAgent, closeAddAgent, addAgent,
+            showAddAgent, closeAddAgent, addAgent, launchAgent, removePending,
             toggleAgentSettings, switchNav, toggleSidebar,
             toggleAutoAccept, toggleAgentAutoAccept,
             refreshHealth, triggerCron, toggleCronJob,

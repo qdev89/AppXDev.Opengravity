@@ -69,6 +69,8 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
         if (!launcher) return res.status(503).json({ ok: false, reason: 'Launcher not available' });
         const { name, folder, host, port } = req.body;
         if (!port) return res.status(400).json({ ok: false, reason: 'Port required' });
+        // Also register the port for CDP scanning
+        cdpManager.addPort(port, host || '127.0.0.1');
         const result = launcher.launch({ name, folder, host, port });
         res.json(result);
     });
