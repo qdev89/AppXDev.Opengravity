@@ -4,7 +4,7 @@
 
 [![Node.js](https://img.shields.io/badge/Node.js-≥18-green)](#prerequisites)
 [![License](https://img.shields.io/badge/License-MIT-blue)](#license)
-[![Version](https://img.shields.io/badge/Version-3.0.0-purple)](#)
+[![Version](https://img.shields.io/badge/Version-3.4.0-purple)](#)
 
 ---
 
@@ -382,19 +382,70 @@ The dashboard is a Progressive Web App. To install it:
 
 ## Web Dashboard
 
-The dashboard is a premium PWA built for real-time monitoring and control.
+The dashboard is a premium PWA built for real-time fleet management and monitoring. As of **v3.4.0**, the dashboard is a full **Agent Fleet Dashboard** — treating each Antigravity IDE instance as an agent in your fleet.
 
 ### Navigation
 
 | Icon | Panel | Description |
 |------|-------|-------------|
-| 📂 | **Projects** | List connected workspaces, select active one |
+| 🤖 | **Fleet** | Agent fleet list with search, status, and management |
 | 💚 | **Health** | System metrics grid (8 cards, auto-refresh 10s) |
 | ⏰ | **Cron** | View/trigger/toggle scheduled jobs |
 | 🌐 | **Remotes** | Remote instance connection status |
-| 📋 | **Templates** | Quick prompt templates |
-| 📝 | **History** | Task history log |
+| 📋 | **History** | Task history log with clear |
 | ⚙️ | **Settings** | Theme, workspace management |
+
+### Fleet Agent Dashboard (v3.1–3.4)
+
+The fleet sidebar shows all discovered Antigravity instances as **agent cards** with real-time status. Features include:
+
+#### Fleet Summary Bar
+- Real-time counters: **total agents** | **online** | **pending approvals**
+- Updates automatically when fleet state changes
+
+#### Agent Cards
+- Phase indicators: 🟢 Ready, 🔵 Working, ✅ Done, ⚠️ Approval
+- Agent nickname display (customizable)
+- Color indicator stripe (customizable)
+- 📌 Pinned agents sorted to top
+- Right-click context menu
+
+#### Right-Click Context Menu
+Right-click any agent card for quick actions:
+
+| Action | Description |
+|--------|-------------|
+| ✏️ **Rename** | Set custom display name (persisted in localStorage) |
+| 📌 **Pin to Top** | Pin/unpin agent to top of fleet list |
+| 🔄 **Re-scan** | Force re-scan this agent's CDP port |
+| 📸 **Screenshot** | Quick screenshot of agent viewport |
+| 🗑️ **Remove** | Disconnect + remove (with confirmation modal) |
+
+#### Agent Registration
+- **+ Add Agent** — Manual agent registration with name, host, port, and color picker
+- **🔍 Scan Range** — Bulk port scanner (e.g., scan ports 9000-9003 at once)
+- Auto-discovery of Antigravity instances on configured CDP ports
+
+#### Agent Settings Panel
+- Per-agent auto-accept toggle
+- Auto-accept statistics (total clicks, last click, clicks per instance)
+- Approval history log
+- Live screenshot preview with refresh
+- Session uptime tracking
+- Agent-specific cron job display
+
+#### Approval System
+- Rich approval cards with context text and timestamp
+- Screenshot preview of the confirmation dialog
+- Accept / Deny / Accept All buttons
+- Approval history log per agent
+
+#### Enhanced Chat View
+- **Chat Toolbar**: Message counter, 🔒 auto-scroll toggle, 📋 Export, 🗑️ Clear, ⬇️ Bottom
+- **Sent Message Bubbles**: User prompts shown as purple accent bubbles with timestamps
+- **Typing Indicator**: Animated dots when agent is streaming
+- **Character Count**: Real-time count in input textarea
+- **Chat Export**: Copy timestamped chat log to clipboard
 
 ### Health Dashboard Metrics
 
@@ -413,12 +464,12 @@ The dashboard is a premium PWA built for real-time monitoring and control.
 
 | Button | Action |
 |--------|--------|
-| 🖥️ Idle/Busy | Shows current agent phase |
+| 💤 Idle/⚡ Streaming | Shows current agent phase |
 | 🤖 OFF/ON | Toggle auto-accept mode |
-| ⚡ | Toggle theme (light/dark) |
+| 🌙/☀️ | Toggle theme (light/dark) |
 | 📸 | Take IDE screenshot |
-| ⚙️ | Open settings panel |
-| ⏹️ | Stop current task |
+| ⚙️ | Open agent settings panel |
+| ■ | Stop current task |
 
 ---
 

@@ -6,7 +6,7 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>AG Mission Control</title>
-    <meta name="description" content="Premium remote dashboard for managing Antigravity IDE instances">
+    <meta name="description" content="Fleet Agent Dashboard for managing multiple Antigravity IDE instances">
     <meta name="theme-color" content="#0a0a0f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,82 +16,42 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/css/styles.css?v=6">
+    <link rel="stylesheet" href="/css/styles.css?v=10">
 </head>
 
 <body>
 
     <!-- ═══════════════════ NAV RAIL ═══════════════════ -->
     <nav class="nav-rail">
-        <div class="nav-logo" title="AG Mission Control">AG</div>
-        <div class="nav-item active" data-panel="projects" onclick="AG.switchNav('projects')" title="Projects">📂</div>
+        <div class="nav-logo" title="AG Mission Control">OG</div>
+        <div class="nav-item active" data-panel="fleet" onclick="AG.switchNav('fleet')" title="Fleet">🤖</div>
         <div class="nav-item" data-panel="health" onclick="AG.switchNav('health')" title="Health">💚</div>
         <div class="nav-item" data-panel="cron" onclick="AG.switchNav('cron')" title="Cron Jobs">⏰</div>
         <div class="nav-item" data-panel="remotes" onclick="AG.switchNav('remotes')" title="Remotes">🌐</div>
-        <div class="nav-item" data-panel="agents" onclick="AG.switchNav('agents')" title="AI Agents">🤖</div>
         <div class="nav-item" data-panel="history" onclick="AG.switchNav('history')" title="History">📋</div>
         <div class="nav-spacer"></div>
         <div class="nav-item" data-panel="settings" onclick="AG.switchNav('settings')" title="Settings">⚙️</div>
     </nav>
 
-    <!-- ═══════════════════ SIDEBAR ════════════════════ -->
+    <!-- ═══════════════════ FLEET SIDEBAR ════════════════════ -->
     <aside class="sidebar" id="sidebar">
-        <!-- Projects Panel -->
-        <div class="sidebar-section" data-panel="projects"
-            style="display:block;flex:1;display:flex;flex-direction:column">
+        <!-- Fleet Panel (default) -->
+        <div class="sidebar-section" data-panel="fleet" style="display:block;flex:1;display:flex;flex-direction:column">
             <div class="sidebar-header">
-                <div class="sidebar-title">Workspaces</div>
-                <input type="text" class="sidebar-search" placeholder="Search projects..." id="searchInput"
-                    oninput="document.querySelectorAll('.ws-item').forEach(i=>i.style.display=i.textContent.toLowerCase().includes(this.value.toLowerCase())?'':'none')">
+                <div class="sidebar-title">Agent Fleet</div>
+                <input type="text" class="sidebar-search" placeholder="Search agents..." id="searchInput"
+                    oninput="AG.filterFleet(this.value)">
             </div>
-            <div class="sidebar-content" id="cascadeList"></div>
+            <!-- Fleet Summary Bar -->
+            <div class="fleet-summary" id="fleetSummary">
+                <div class="fleet-stat"><span class="fleet-stat-val" id="fs-total">0</span> agents</div>
+                <div class="fleet-stat"><span class="fleet-stat-val fs-online" id="fs-online">0</span> online</div>
+                <div class="fleet-stat"><span class="fleet-stat-val fs-pending" id="fs-pending">0</span> pending</div>
+            </div>
+            <div class="sidebar-content" id="fleetList"></div>
             <div class="sidebar-footer">
-                <button class="add-ws-btn" onclick="AG.showAddWorkspace()">＋ Add Workspace</button>
-            </div>
-        </div>
-
-        <!-- Agents Panel -->
-        <div class="sidebar-section" data-panel="agents" style="display:none;flex:1;display:flex;flex-direction:column">
-            <div class="sidebar-header">
-                <div class="sidebar-title">AI Agents</div>
-            </div>
-            <div class="sidebar-content" style="padding:16px">
-                <div class="ws-item" style="flex-direction:column;gap:6px">
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <span style="font-size:20px">🧠</span>
-                        <div>
-                            <div class="ws-name">Claude Opus 4.6</div>
-                            <div class="ws-meta">Primary agent • Fast mode</div>
-                        </div>
-                    </div>
-                    <div class="ws-tags"><span class="ws-tag">coding</span><span class="ws-tag">analysis</span><span
-                            class="ws-tag">150k ctx</span></div>
-                </div>
-                <div class="ws-item" style="flex-direction:column;gap:6px;margin-top:4px">
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <span style="font-size:20px">⚡</span>
-                        <div>
-                            <div class="ws-name">Claude Sonnet 4</div>
-                            <div class="ws-meta">Speed agent • Background</div>
-                        </div>
-                    </div>
-                    <div class="ws-tags"><span class="ws-tag">quick</span><span class="ws-tag">drafts</span><span
-                            class="ws-tag">200k ctx</span></div>
-                </div>
-                <div class="ws-item" style="flex-direction:column;gap:6px;margin-top:4px">
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <span style="font-size:20px">🔥</span>
-                        <div>
-                            <div class="ws-name">Gemini 2.5 Pro</div>
-                            <div class="ws-meta">Research • Multi-modal</div>
-                        </div>
-                    </div>
-                    <div class="ws-tags"><span class="ws-tag">vision</span><span class="ws-tag">research</span><span
-                            class="ws-tag">1M ctx</span></div>
-                </div>
-                <p style="font-size:11px;color:var(--text-muted);margin-top:16px;text-align:center">
-                    Agents are auto-detected from Antigravity config
-                </p>
+                <button class="add-ws-btn" onclick="AG.showAddAgent()">＋ Add Agent</button>
+                <button class="add-ws-btn" style="margin-top:4px" onclick="AG.bulkScan()">🔍 Scan Range</button>
             </div>
         </div>
 
@@ -114,7 +74,8 @@
         <div class="sidebar-section" data-panel="health" style="display:none;flex:1;display:flex;flex-direction:column">
             <div class="sidebar-header">
                 <div class="sidebar-title">System Health</div>
-                <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.refreshHealth()">🔄 Refresh</button>
+                <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.refreshHealth()">🔄
+                    Refresh</button>
             </div>
             <div class="sidebar-content" style="padding:12px" id="healthPanel">
                 <div class="health-grid" id="healthGrid">
@@ -123,7 +84,7 @@
                         <div class="health-value" id="h-status">⏳</div>
                     </div>
                     <div class="health-card">
-                        <div class="health-label">Instances</div>
+                        <div class="health-label">Agents</div>
                         <div class="health-value" id="h-instances">0</div>
                     </div>
                     <div class="health-card">
@@ -147,7 +108,7 @@
                         <div class="health-value" id="h-remotes">0</div>
                     </div>
                     <div class="health-card">
-                        <div class="health-label">Stream Clients</div>
+                        <div class="health-label">Stream</div>
                         <div class="health-value" id="h-stream">0</div>
                     </div>
                 </div>
@@ -168,7 +129,8 @@
         </div>
 
         <!-- Remotes Panel -->
-        <div class="sidebar-section" data-panel="remotes" style="display:none;flex:1;display:flex;flex-direction:column">
+        <div class="sidebar-section" data-panel="remotes"
+            style="display:none;flex:1;display:flex;flex-direction:column">
             <div class="sidebar-header">
                 <div class="sidebar-title">Remote Instances</div>
             </div>
@@ -176,44 +138,6 @@
                 <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
                     🌐 Loading remote connections...
                 </p>
-            </div>
-        </div>
-
-        <!-- Docs Panel -->
-        <div class="sidebar-section" data-panel="docs" style="display:none;flex:1;display:flex;flex-direction:column">
-            <div class="sidebar-header">
-                <div class="sidebar-title">Documentation</div>
-            </div>
-            <div class="sidebar-content" style="padding:16px">
-                <a href="https://github.com/qdev89/Antigravity-Shit-Chat" target="_blank" class="ws-item"
-                    style="text-decoration:none;color:inherit">
-                    <span>📘</span>
-                    <div class="ws-info">
-                        <div class="ws-name">README</div>
-                        <div class="ws-meta">GitHub Repository</div>
-                    </div>
-                </a>
-                <div class="ws-item" style="cursor:default">
-                    <span>🔧</span>
-                    <div class="ws-info">
-                        <div class="ws-name">Setup Guide</div>
-                        <div class="ws-meta">Launch AG with CDP port</div>
-                    </div>
-                </div>
-                <div class="ws-item" style="cursor:default">
-                    <span>🤖</span>
-                    <div class="ws-info">
-                        <div class="ws-name">Telegram Bot</div>
-                        <div class="ws-meta">Remote control via @BotFather</div>
-                    </div>
-                </div>
-                <div class="ws-item" style="cursor:default">
-                    <span>🔌</span>
-                    <div class="ws-info">
-                        <div class="ws-name">API Reference</div>
-                        <div class="ws-meta">REST + WebSocket endpoints</div>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -243,24 +167,11 @@
                 <div class="panel-section">
                     <div class="panel-label">Connection</div>
                     <div class="panel-row"><span>CDP Port Range</span><span class="panel-value">9000–9003</span></div>
-                    <div class="panel-row"><span>Poll Interval</span><span class="panel-value">2s / 5s</span></div>
                     <div class="panel-row"><span>Server</span><span class="panel-value">:3000</span></div>
                 </div>
                 <div class="panel-section">
-                    <div class="panel-label">Telegram</div>
-                    <div class="panel-row"><span>Bot</span><span class="panel-value">@AG_Agent001_BOT</span></div>
-                    <div class="panel-row"><span>Status</span><span style="color:var(--success);font-size:12px">●
-                            Connected</span></div>
-                </div>
-                <div class="panel-section">
-                    <div class="panel-label">Automation</div>
-                    <div class="panel-row"><span>Auto-Accept</span>
-                        <div class="toggle" onclick="AG.toggleAutoAccept();this.classList.toggle('on')"></div>
-                    </div>
-                </div>
-                <div class="panel-section">
                     <div class="panel-label">About</div>
-                    <div class="panel-row"><span>Version</span><span class="panel-value">v3.0.0</span></div>
+                    <div class="panel-row"><span>Version</span><span class="panel-value">v3.1.0</span></div>
                     <div class="panel-row"><span>License</span><span class="panel-value">MIT</span></div>
                 </div>
             </div>
@@ -273,15 +184,15 @@
         </div>
     </aside>
 
-    <!-- ═══════════════════ MAIN CONTENT ═══════════════ -->
+    <!-- ═══════════════════ MAIN CONTENT (AGENT PANEL) ═══════════════ -->
     <main class="main">
-        <!-- Topbar -->
+        <!-- Agent Header -->
         <header class="topbar">
             <button class="action-btn mobile-menu-btn" onclick="AG.toggleSidebar()" style="display:none">☰</button>
             <div class="topbar-left">
                 <div>
                     <div class="topbar-title" id="topbarTitle">AG Mission Control</div>
-                    <div class="topbar-subtitle" id="topbarSubtitle">Select a workspace to begin</div>
+                    <div class="topbar-subtitle" id="topbarSubtitle">Select an agent to begin</div>
                 </div>
             </div>
             <div class="status-badge idle" id="statusBadge"><span id="statusText">💤 Idle</span></div>
@@ -291,95 +202,243 @@
                 </button>
                 <button class="action-btn" id="themeToggle" onclick="AG.toggleTheme()" title="Theme">🌙</button>
                 <button class="action-btn" onclick="AG.takeScreenshot()" title="Screenshot">📸</button>
-                <button class="action-btn" onclick="AG.toggleRightPanel()" title="Settings">⚙️</button>
+                <button class="action-btn" onclick="AG.toggleAgentSettings()" title="Agent Settings">⚙️</button>
                 <button class="action-btn danger" onclick="AG.stopAgent()" title="Stop">■</button>
             </div>
         </header>
 
-        <!-- Chat -->
+        <!-- Agent Activity / Chat View -->
         <div class="chat-area" id="chatArea">
+            <!-- Chat Toolbar -->
+            <div class="chat-toolbar" id="chatToolbar">
+                <div class="chat-toolbar-left">
+                    <span class="chat-msg-count" id="chatMsgCount">0 messages</span>
+                    <button class="chat-tool-btn" id="scrollLockBtn" onclick="AG.toggleScrollLock()"
+                        title="Auto-scroll">
+                        🔒 Auto-scroll
+                    </button>
+                </div>
+                <div class="chat-toolbar-right">
+                    <button class="chat-tool-btn" onclick="AG.exportChat()" title="Export chat">📋 Export</button>
+                    <button class="chat-tool-btn" onclick="AG.clearChat()" title="Clear chat">🗑️ Clear</button>
+                    <button class="chat-tool-btn" onclick="AG.scrollToBottom()" title="Scroll to bottom">⬇️
+                        Bottom</button>
+                </div>
+            </div>
             <div id="chatContent">
                 <div class="empty-state">
-                    <div class="icon">🚀</div>
-                    <h3>AG Mission Control</h3>
-                    <p>Connect to an Antigravity workspace to start monitoring and controlling your AI agents remotely
+                    <div class="icon">🤖</div>
+                    <h3>Agent Fleet Dashboard</h3>
+                    <p>Select an agent from the fleet sidebar to view its activity, send prompts, and manage settings.
                     </p>
                 </div>
+            </div>
+            <!-- Typing Indicator -->
+            <div class="typing-indicator" id="typingIndicator" style="display:none">
+                <div class="typing-dots">
+                    <span></span><span></span><span></span>
+                </div>
+                <span class="typing-text">Agent is working...</span>
+            </div>
+        </div>
+
+        <!-- Approval Card (rich context when confirmation dialog detected) -->
+        <div class="approval-card" id="approvalBanner" style="display:none">
+            <div class="approval-card-header">
+                <span class="approval-icon">⚠️</span>
+                <div class="approval-card-info">
+                    <div class="approval-card-title">Approval Required</div>
+                    <div class="approval-card-text" id="approvalText">Confirmation dialog detected</div>
+                </div>
+                <div class="approval-card-time" id="approvalTime"></div>
+            </div>
+            <div class="approval-card-preview" id="approvalPreview" style="display:none">
+                <img id="approvalScreenshot" alt="Agent screenshot" />
+            </div>
+            <div class="approval-card-actions">
+                <button class="approval-btn accept" onclick="AG.acceptConfirmation()">✅ Accept</button>
+                <button class="approval-btn accept-all" onclick="AG.acceptAllConfirmations()"
+                    title="Accept on all agents">✅ Accept All</button>
+                <button class="approval-btn deny" onclick="AG.denyConfirmation()">❌ Deny</button>
+                <button class="approval-btn preview-btn" onclick="AG.toggleApprovalPreview()"
+                    title="Show screenshot">📸</button>
             </div>
         </div>
 
         <!-- Input -->
         <div class="input-bar">
-            <textarea id="messageInput" placeholder="Send a message to Antigravity..." rows="1"
-                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.AG?.sendMessage()}"></textarea>
+            <div class="input-wrapper">
+                <textarea id="messageInput" placeholder="Send a prompt to this agent..." rows="1"
+                    oninput="AG.updateCharCount && AG.updateCharCount()"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.AG?.sendMessage()}"></textarea>
+                <span class="char-count" id="charCount">0</span>
+            </div>
             <button class="send-btn" id="sendBtn" title="Send" onclick="window.AG?.sendMessage()">▶</button>
         </div>
     </main>
 
-    <!-- ═══════════════ RIGHT PANEL ════════════════════ -->
-    <aside class="right-panel" id="rightPanel">
+    <!-- ═══════════════ AGENT SETTINGS PANEL (RIGHT) ════════════ -->
+    <aside class="right-panel" id="agentSettingsPanel">
         <div class="panel-header">
-            <span class="panel-title">Workspace Config</span>
-            <button class="panel-close" onclick="AG.toggleRightPanel()">✕</button>
+            <span class="panel-title">Agent Settings</span>
+            <button class="panel-close" onclick="AG.toggleAgentSettings()">✕</button>
         </div>
-        <div class="panel-section">
-            <div class="panel-label">Agent Info</div>
-            <div class="panel-row"><span>Model</span><span class="panel-value">Claude Opus 4.6</span></div>
-            <div class="panel-row"><span>Mode</span><span class="panel-value">Fast</span></div>
-            <div class="panel-row"><span>Context</span><span class="panel-value">150K tokens</span></div>
-        </div>
-        <div class="panel-section">
-            <div class="panel-label">Automation</div>
-            <div class="panel-row"><span>Auto-accept</span>
-                <div class="toggle" onclick="this.classList.toggle('on')"></div>
+        <div id="agentSettingsContent">
+            <!-- Live Screenshot Preview -->
+            <div class="panel-section" style="padding:12px">
+                <div class="agent-preview-thumb" id="as-preview">
+                    <div style="text-align:center;color:var(--text-muted);font-size:11px;padding:30px 0">📸 Click to
+                        capture</div>
+                </div>
+                <button class="add-ws-btn" style="margin-top:8px" onclick="AG.captureAgentPreview()">📷 Refresh
+                    Screenshot</button>
             </div>
-            <div class="panel-row"><span>Auto-scroll</span>
-                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+            <div class="panel-section">
+                <div class="panel-label">Agent Info</div>
+                <div class="panel-row"><span>Name</span><span class="panel-value" id="as-name">–</span></div>
+                <div class="panel-row"><span>Host</span><span class="panel-value" id="as-host">–</span></div>
+                <div class="panel-row"><span>Port</span><span class="panel-value" id="as-port">–</span></div>
+                <div class="panel-row"><span>Phase</span><span class="panel-value" id="as-phase">idle</span></div>
             </div>
-            <div class="panel-row"><span>Sound alerts</span>
-                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+            <div class="panel-section">
+                <div class="panel-label">Automation</div>
+                <div class="panel-row">
+                    <span>Per-agent auto-accept</span>
+                    <div class="toggle" id="as-autoaccept" onclick="AG.toggleAgentAutoAccept()"></div>
+                </div>
+                <div class="panel-row">
+                    <span>Global auto-accept</span>
+                    <div class="toggle" id="as-global-autoaccept" onclick="AG.toggleAutoAccept()"></div>
+                </div>
+                <div class="panel-row"><span>Auto-clicks</span><span class="panel-value" id="as-autoclicks">0</span>
+                </div>
+                <div class="panel-row"><span>Last click</span><span class="panel-value" id="as-lastclick">–</span></div>
             </div>
-        </div>
-        <div class="panel-section">
-            <div class="panel-label">Quick Prompts</div>
-            <button class="add-ws-btn" style="margin-bottom:6px"
-                onclick="document.getElementById('messageInput').value='Fix all lint errors and run tests';AG.toggleRightPanel()">🔧
-                Fix lint + test</button>
-            <button class="add-ws-btn" style="margin-bottom:6px"
-                onclick="document.getElementById('messageInput').value='Commit all changes with a descriptive message';AG.toggleRightPanel()">💾
-                Commit changes</button>
-            <button class="add-ws-btn" style="margin-bottom:6px"
-                onclick="document.getElementById('messageInput').value='Continue with the next task';AG.toggleRightPanel()">▶️
-                Continue</button>
-        </div>
-        <div class="panel-section">
-            <div class="panel-label">Stats</div>
-            <div class="panel-row"><span>Uptime</span><span class="panel-value" id="uptimeValue">–</span></div>
-            <div class="panel-row"><span>Messages sent</span><span class="panel-value">0</span></div>
-            <div class="panel-row"><span>Tasks completed</span><span class="panel-value">0</span></div>
+            <div class="panel-section">
+                <div class="panel-label">Quick Prompts</div>
+                <button class="add-ws-btn" style="margin-bottom:6px"
+                    onclick="AG.quickPrompt('Fix all lint errors and run tests')">🔧 Fix lint + test</button>
+                <button class="add-ws-btn" style="margin-bottom:6px"
+                    onclick="AG.quickPrompt('Commit all changes with a descriptive message')">💾 Commit changes</button>
+                <button class="add-ws-btn" style="margin-bottom:6px"
+                    onclick="AG.quickPrompt('Continue with the next task')">▶️ Continue</button>
+                <button class="add-ws-btn" style="margin-bottom:6px"
+                    onclick="AG.quickPrompt('Review the latest changes for bugs and security issues')">🔍 Code
+                    review</button>
+                <button class="add-ws-btn" style="margin-bottom:6px"
+                    onclick="AG.quickPrompt('Run all tests and report results')">🧪 Run tests</button>
+                <button class="add-ws-btn" style="margin-bottom:6px"
+                    onclick="AG.quickPrompt('Generate documentation for the current module')">📄 Gen docs</button>
+            </div>
+            <div class="panel-section">
+                <div class="panel-label">Agent Cron Jobs</div>
+                <div id="as-cron-list">
+                    <span style="font-size:12px;color:var(--text-muted)">No cron jobs for this agent</span>
+                </div>
+            </div>
+            <div class="panel-section">
+                <div class="panel-label">Approval Log</div>
+                <div id="as-approval-log">
+                    <span style="font-size:12px;color:var(--text-muted)">No approvals yet</span>
+                </div>
+            </div>
+            <div class="panel-section">
+                <div class="panel-label">Stats</div>
+                <div class="panel-row"><span>Messages sent</span><span class="panel-value" id="as-sent">0</span></div>
+                <div class="panel-row"><span>Tasks completed</span><span class="panel-value" id="as-completed">0</span>
+                </div>
+                <div class="panel-row"><span>Session uptime</span><span class="panel-value" id="as-uptime">–</span>
+                </div>
+            </div>
         </div>
     </aside>
 
-    <!-- ═══════════════ ADD WORKSPACE MODAL ════════════ -->
-    <div class="modal-overlay" id="addWsModal">
+    <!-- ═══════════════ ADD AGENT MODAL ════════════ -->
+    <div class="modal-overlay" id="addAgentModal">
         <div class="modal">
             <div class="modal-header">
-                <h3>Add Workspace</h3>
-                <p>Connect to a running Antigravity instance</p>
+                <h3>Add Agent</h3>
+                <p>Connect to an Antigravity IDE instance</p>
             </div>
             <div class="modal-body">
+                <label>Agent Name (optional)</label>
+                <input type="text" id="agentName" placeholder="e.g. POSKit, DevOps, Blog">
                 <label>Host</label>
-                <input type="text" id="wsHost" value="localhost" placeholder="localhost or IP address">
+                <input type="text" id="agentHost" value="localhost" placeholder="localhost or IP address">
                 <label>CDP Port</label>
-                <input type="number" id="wsPort" value="9001" placeholder="9000-9003">
-                <label>Project Name (optional)</label>
-                <input type="text" id="wsName" placeholder="My Project">
+                <input type="number" id="agentPort" value="9001" placeholder="9000-9003">
+                <label>Agent Color</label>
+                <div class="color-picker" id="agentColorPicker">
+                    <div class="color-dot" data-color="#7c5cfc" style="background:#7c5cfc" onclick="AG.pickColor(this)">
+                    </div>
+                    <div class="color-dot" data-color="#34d399" style="background:#34d399" onclick="AG.pickColor(this)">
+                    </div>
+                    <div class="color-dot" data-color="#fb923c" style="background:#fb923c" onclick="AG.pickColor(this)">
+                    </div>
+                    <div class="color-dot" data-color="#f87171" style="background:#f87171" onclick="AG.pickColor(this)">
+                    </div>
+                    <div class="color-dot" data-color="#60a5fa" style="background:#60a5fa" onclick="AG.pickColor(this)">
+                    </div>
+                    <div class="color-dot" data-color="#fbbf24" style="background:#fbbf24" onclick="AG.pickColor(this)">
+                    </div>
+                    <div class="color-dot" data-color="#a78bfa" style="background:#a78bfa" onclick="AG.pickColor(this)">
+                    </div>
+                    <div class="color-dot" data-color="#2dd4bf" style="background:#2dd4bf" onclick="AG.pickColor(this)">
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
-                <button class="btn" onclick="AG.closeAddWorkspace()">Cancel</button>
-                <button class="btn btn-primary" onclick="AG.addWorkspace()">Connect</button>
+                <button class="btn" onclick="AG.closeAddAgent()">Cancel</button>
+                <button class="btn btn-primary" onclick="AG.addAgent()">Connect</button>
             </div>
         </div>
+    </div>
+
+    <!-- ═══════════════ RENAME AGENT MODAL ══════════ -->
+    <div class="modal-overlay" id="renameAgentModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Rename Agent</h3>
+                <p>Set a custom display name</p>
+            </div>
+            <div class="modal-body">
+                <label>New Name</label>
+                <input type="text" id="renameAgentInput" placeholder="e.g. POSKit Agent">
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="AG.closeRename()">Cancel</button>
+                <button class="btn btn-primary" onclick="AG.saveRename()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ CONFIRM REMOVE MODAL ════════ -->
+    <div class="modal-overlay" id="removeAgentModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>🗑️ Remove Agent</h3>
+                <p id="removeAgentName">Are you sure?</p>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-secondary)">This will stop scanning this port and remove it
+                    from your saved agents. The IDE instance will not be affected.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="AG.closeRemove()">Cancel</button>
+                <button class="btn" style="background:var(--danger);color:#fff"
+                    onclick="AG.confirmRemove()">Remove</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ CONTEXT MENU ═══════════════ -->
+    <div class="context-menu" id="agentContextMenu">
+        <div class="ctx-item" onclick="AG.ctxRename()">✏️ Rename</div>
+        <div class="ctx-item" onclick="AG.ctxPin()">📌 Pin to Top</div>
+        <div class="ctx-item" onclick="AG.ctxRescan()">🔄 Re-scan</div>
+        <div class="ctx-item" onclick="AG.ctxScreenshot()">📸 Screenshot</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item ctx-danger" onclick="AG.ctxRemove()">🗑️ Remove</div>
     </div>
 
     <!-- ═══════════════ TOAST CONTAINER ════════════════ -->
@@ -388,7 +447,7 @@
     <!-- Cascade styles injected here -->
     <style id="cascadeStyle"></style>
 
-    <script src="/js/app.js?v=6"></script>
+    <script src="/js/app.js?v=10"></script>
 </body>
 
 </html>

@@ -236,6 +236,130 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
             res.json({ routes: gateway.router.list() });
         });
 
+        // ── Fleet: Per-Instance Approval Detection ──
+        app.get('/api/v1/instances/:id/approval', async (req, res) => {
+            const cascade = cdpManager.cascades.get(req.params.id);
+            if (!cascade || !cascade.cdp) {
+                return res.json({ hasApproval: false });
+            }
+            try {
+                const result = await cascade.cdp.call('Runtime.evaluate', {
+                    expression: `(() => {
+                        // Check for confirmation/approval dialogs in Antigravity IDE
+                        const selectors = [
+                            'button[aria-label*="Accept"]', 'button[aria-label*="Confirm"]',
+                            'button[aria-label*="Allow"]', 'button[aria-label*="Approve"]',
+                            'button[aria-label*="Yes"]', 'button[aria-label*="Continue"]',
+                            'button[aria-label*="Run"]',
+                            '.confirm-button', '.accept-button',
+                            '[class*="confirmation"] button.primary:not([disabled])'
+                        ];
+                        for (const sel of selectors) {
+                            const btns = document.querySelectorAll(sel);
+                            for (const btn of btns) {
+                                if (btn.offsetParent && !btn.disabled) {
+                                    return { found: true, text: (btn.textContent || btn.ariaLabel || '').substring(0, 80) };
+                                }
+                            }
+                        }
+                        return { found: false };
+                    })()`,
+                    returnByValue: true,
+                    contextId: cascade.cdp.rootContextId
+                });
+                const val = result?.result?.value || { found: false };
+                res.json({
+                    hasApproval: val.found,
+                    message: val.found ? `"${val.text}" needs your approval` : null,
+                });
+            } catch (e) {
+                res.json({ hasApproval: false, error: e.message });
+            }
+        });
+
+        // ── Fleet: Accept confirmation ──
+        app.post('/api/v1/instances/:id/approve', async (req, res) => {
+            // Delegate to existing gateway method if available
+            if (gateway.acceptConfirmation) {
+                const result = await gateway.acceptConfirmation(req.params.id);
+                return res.json(result);
+            }
+            // Fallback: direct CDP click
+            const cascade = cdpManager.cascades.get(req.params.id);
+            if (!cascade || !cascade.cdp) {
+                return res.status(404).json({ ok: false, reason: 'Instance not found' });
+            }
+            try {
+                const result = await cascade.cdp.call('Runtime.evaluate', {
+                    expression: `(() => {
+                        const selectors = [
+                            'button[aria-label*="Accept"]', 'button[aria-label*="Confirm"]',
+                            'button[aria-label*="Allow"]', 'button[aria-label*="Approve"]',
+                            'button[aria-label*="Yes"]', 'button[aria-label*="Continue"]',
+                            'button[aria-label*="Run"]',
+                            '.confirm-button', '.accept-button',
+                            'button.primary:not([disabled])'
+                        ];
+                        for (const sel of selectors) {
+                            const btns = document.querySelectorAll(sel);
+                            for (const btn of btns) {
+                                if (btn.offsetParent && !btn.disabled) {
+                                    btn.click();
+                                    return 'clicked: ' + (btn.textContent || btn.ariaLabel || sel).substring(0, 50);
+                                }
+                            }
+                        }
+                        return 'none';
+                    })()`,
+                    returnByValue: true,
+                    contextId: cascade.cdp.rootContextId
+                });
+                res.json({ ok: true, action: result?.result?.value || 'none' });
+            } catch (e) {
+                res.json({ ok: false, reason: e.message });
+            }
+        });
+
+        // ── Fleet: Deny/dismiss confirmation ──
+        app.post('/api/v1/instances/:id/deny', async (req, res) => {
+            const cascade = cdpManager.cascades.get(req.params.id);
+            if (!cascade || !cascade.cdp) {
+                return res.status(404).json({ ok: false, reason: 'Instance not found' });
+            }
+            try {
+                const result = await cascade.cdp.call('Runtime.evaluate', {
+                    expression: `(() => {
+                        // Try clicking deny/cancel/dismiss buttons first
+                        const denySelectors = [
+                            'button[aria-label*="Deny"]', 'button[aria-label*="Cancel"]',
+                            'button[aria-label*="Reject"]', 'button[aria-label*="No"]',
+                            'button[aria-label*="Dismiss"]', 'button[aria-label*="Close"]',
+                            '.cancel-button', '.deny-button',
+                            '[class*="confirmation"] button.secondary',
+                            '[class*="confirmation"] button:not(.primary)'
+                        ];
+                        for (const sel of denySelectors) {
+                            const btns = document.querySelectorAll(sel);
+                            for (const btn of btns) {
+                                if (btn.offsetParent && !btn.disabled) {
+                                    btn.click();
+                                    return 'denied: ' + (btn.textContent || btn.ariaLabel || sel).substring(0, 50);
+                                }
+                            }
+                        }
+                        // Fallback: press Escape
+                        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                        return 'escaped';
+                    })()`,
+                    returnByValue: true,
+                    contextId: cascade.cdp.rootContextId
+                });
+                res.json({ ok: true, action: result?.result?.value || 'escaped' });
+            } catch (e) {
+                res.json({ ok: false, reason: e.message });
+            }
+        });
+
         // ── Automation: Auto-Accept ──
         if (gateway.autoAccept) {
             app.get('/api/v1/auto-accept', (req, res) => {

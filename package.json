@@ -1,6 +1,6 @@
 {
     "name": "opengravity",
-    "version": "3.0.0",
+    "version": "3.4.0",
     "type": "module",
     "description": "Antigravity-Powered AI Gateway — REST API, WebSocket streaming, automation, remote control for AI coding agents",
     "main": "server.js",

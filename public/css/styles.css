@@ -1,4 +1,4 @@
-/* AG Mission Control — Premium Design System */
+/* AG Mission Control — Fleet Agent Dashboard v3.1 */
 /* ── Dark Theme (default) ───────────────── */
 :root,
 [data-theme="dark"] {
@@ -20,6 +20,7 @@
     --warning: #fbbf24;
     --danger: #f87171;
     --streaming: #60a5fa;
+    --approval: #fb923c;
     --shadow: rgba(0, 0, 0, 0.4);
     --glass: rgba(14, 14, 20, 0.85);
     --glass-border: rgba(255, 255, 255, 0.06);
@@ -49,6 +50,7 @@
     --warning: #d97706;
     --danger: #dc2626;
     --streaming: #3b82f6;
+    --approval: #ea580c;
     --shadow: rgba(0, 0, 0, 0.08);
     --glass: rgba(255, 255, 255, 0.9);
     --glass-border: rgba(0, 0, 0, 0.06);
@@ -101,10 +103,11 @@ body {
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    font-size: 14px;
+    font-size: 13px;
     color: #fff;
     margin-bottom: 20px;
     cursor: pointer;
+    letter-spacing: -0.5px;
 }
 
 .nav-item {
@@ -154,6 +157,24 @@ body {
     height: 8px;
     border-radius: 50%;
     background: var(--danger);
+}
+
+/* Nav badge count */
+.nav-item .badge-count {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    background: var(--approval);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
 }
 
 /* ── Sidebar Panel ──────────────────────── */
@@ -211,7 +232,121 @@ body {
     border-top: 1px solid var(--border);
 }
 
-/* Workspace Items */
+/* ── Fleet Agent Cards ────────────────────── */
+.fleet-card {
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    transition: all 0.2s;
+    margin-bottom: 4px;
+    position: relative;
+}
+
+.fleet-card:hover {
+    background: var(--bg-hover);
+}
+
+.fleet-card.active {
+    background: var(--accent-glow);
+    border: 1px solid rgba(124, 92, 252, 0.2);
+}
+
+.fleet-card:not(.active) {
+    border: 1px solid transparent;
+}
+
+/* Agent status dot */
+.fleet-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+    transition: all 0.3s;
+}
+
+.fleet-dot.idle {
+    background: var(--text-muted);
+}
+
+.fleet-dot.streaming {
+    background: var(--streaming);
+    box-shadow: 0 0 8px var(--streaming);
+    animation: pulse 1.5s infinite;
+}
+
+.fleet-dot.complete {
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+}
+
+.fleet-dot.approval {
+    background: var(--approval);
+    box-shadow: 0 0 8px var(--approval);
+    animation: pulse 1s infinite;
+}
+
+.fleet-dot.offline {
+    background: var(--danger);
+    opacity: 0.5;
+}
+
+.fleet-dot.error {
+    background: var(--danger);
+    box-shadow: 0 0 6px var(--danger);
+}
+
+.fleet-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.fleet-name {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fleet-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.fleet-preview {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.7;
+    font-style: italic;
+}
+
+/* Approval badge on fleet card */
+.fleet-approval-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(251, 146, 60, 0.15);
+    color: var(--approval);
+    font-size: 9px;
+    font-weight: 600;
+    animation: pulse 1s infinite;
+}
+
+/* Keep legacy ws-item styles for non-fleet panels */
 .ws-item {
     padding: 10px 12px;
     border-radius: 10px;
@@ -230,30 +365,6 @@ body {
 .ws-item.active {
     background: var(--accent-glow);
     border: 1px solid rgba(124, 92, 252, 0.2);
-}
-
-.ws-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-top: 4px;
-    flex-shrink: 0;
-    transition: all 0.3s;
-}
-
-.ws-dot.idle {
-    background: var(--text-muted);
-}
-
-.ws-dot.streaming {
-    background: var(--streaming);
-    box-shadow: 0 0 8px var(--streaming);
-    animation: pulse 1.5s infinite;
-}
-
-.ws-dot.complete {
-    background: var(--success);
-    box-shadow: 0 0 6px var(--success);
 }
 
 .ws-info {
@@ -290,7 +401,7 @@ body {
     color: var(--text-secondary);
 }
 
-/* Add Workspace Button */
+/* Add Button */
 .add-ws-btn {
     width: 100%;
     padding: 8px;
@@ -373,6 +484,7 @@ body {
     align-items: center;
     gap: 4px;
     transition: all 0.3s;
+    white-space: nowrap;
 }
 
 .status-badge.idle {
@@ -389,6 +501,12 @@ body {
 .status-badge.complete {
     background: rgba(52, 211, 153, 0.15);
     color: var(--success);
+}
+
+.status-badge.approval {
+    background: rgba(251, 146, 60, 0.15);
+    color: var(--approval);
+    animation: pulse 1s infinite;
 }
 
 /* Action Buttons */
@@ -436,17 +554,71 @@ body {
     overflow-x: hidden;
     padding: 0;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 .chat-content {
     min-height: 100%;
 }
 
+/* Chat Toolbar */
+.chat-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.chat-toolbar-left,
+.chat-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chat-msg-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.chat-tool-btn {
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.chat-tool-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-hover);
+}
+
+.chat-tool-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* Chat Mirror */
 .chat-mirror {
     font-family: inherit;
     padding: 12px 16px;
     line-height: 1.6;
     font-size: 14px;
+    flex: 1;
 }
 
 [data-theme="dark"] .chat-mirror {
@@ -469,6 +641,119 @@ body {
     padding: 12px;
     overflow-x: auto;
     border: 1px solid var(--border);
+}
+
+/* Sent Message Bubbles */
+.chat-sent-msg {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 16px;
+}
+
+.chat-sent-bubble {
+    max-width: 70%;
+    background: var(--accent);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 14px 14px 4px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-word;
+    position: relative;
+}
+
+.chat-sent-time {
+    font-size: 9px;
+    opacity: 0.7;
+    margin-top: 3px;
+    text-align: right;
+}
+
+/* Typing Indicator */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    flex-shrink: 0;
+}
+
+.typing-dots {
+    display: flex;
+    gap: 3px;
+}
+
+.typing-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: typingBounce 1.2s infinite;
+}
+
+.typing-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typingBounce {
+
+    0%,
+    60%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.4;
+    }
+
+    30% {
+        transform: translateY(-4px);
+        opacity: 1;
+    }
+}
+
+.typing-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Input Wrapper */
+.input-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+}
+
+.input-wrapper textarea {
+    width: 100%;
+    padding: 10px 40px 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    outline: none;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+}
+
+.input-wrapper textarea:focus {
+    border-color: var(--accent);
+}
+
+.char-count {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    pointer-events: none;
 }
 
 /* Empty state */
@@ -500,6 +785,189 @@ body {
     line-height: 1.5;
 }
 
+/* ── Approval Card (Rich Context) ─────────── */
+.approval-card {
+    padding: 12px 16px;
+    background: rgba(251, 146, 60, 0.06);
+    border-top: 2px solid rgba(251, 146, 60, 0.3);
+    border-bottom: 1px solid rgba(251, 146, 60, 0.15);
+    flex-shrink: 0;
+    animation: slideDown 0.3s ease;
+}
+
+.approval-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.approval-icon {
+    font-size: 20px;
+    margin-top: 2px;
+}
+
+.approval-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.approval-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--approval);
+    margin-bottom: 2px;
+}
+
+.approval-card-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.approval-card-time {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    margin-top: 3px;
+}
+
+.approval-card-preview {
+    margin: 10px 0 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    max-height: 200px;
+}
+
+.approval-card-preview img {
+    width: 100%;
+    height: auto;
+    display: block;
+    object-fit: cover;
+}
+
+.approval-card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.approval-btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+}
+
+.approval-btn.accept {
+    background: rgba(52, 211, 153, 0.1);
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.approval-btn.accept:hover {
+    background: rgba(52, 211, 153, 0.25);
+}
+
+.approval-btn.accept-all {
+    background: rgba(124, 92, 252, 0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.approval-btn.accept-all:hover {
+    background: rgba(124, 92, 252, 0.2);
+}
+
+.approval-btn.deny {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.approval-btn.deny:hover {
+    background: rgba(248, 113, 113, 0.25);
+}
+
+.approval-btn.preview-btn {
+    margin-left: auto;
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+
+.approval-btn.preview-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ── Agent Preview Thumbnail ──────────────── */
+.agent-preview-thumb {
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    min-height: 80px;
+    position: relative;
+    cursor: pointer;
+}
+
+.agent-preview-thumb img {
+    width: 100%;
+    height: auto;
+    display: block;
+    transition: opacity 0.3s;
+}
+
+.agent-preview-thumb:hover {
+    border-color: var(--accent);
+}
+
+/* ── Approval Log Entry ──────────────────── */
+.approval-log-entry {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.approval-log-entry:last-child {
+    border-bottom: none;
+}
+
+.approval-log-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.approval-log-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.approval-log-time {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 /* ── Input Bar ──────────────────────────── */
 .input-bar {
     padding: 10px 16px;
@@ -512,9 +980,9 @@ body {
     padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
 }
 
-.input-bar textarea {
+.input-bar .input-wrapper textarea {
     flex: 1;
-    padding: 10px 14px;
+    padding: 10px 40px 10px 14px;
     border-radius: 12px;
     border: 1px solid var(--border);
     background: var(--bg-tertiary);
@@ -529,12 +997,12 @@ body {
     transition: border-color 0.2s;
 }
 
-.input-bar textarea:focus {
+.input-bar .input-wrapper textarea:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
-.input-bar textarea::placeholder {
+.input-bar .input-wrapper textarea::placeholder {
     color: var(--text-muted);
 }
 
@@ -565,7 +1033,7 @@ body {
     transform: none;
 }
 
-/* ── Right Panel (Settings/Config) ──────── */
+/* ── Right Panel (Agent Settings) ──────── */
 .right-panel {
     width: 320px;
     height: 100vh;
@@ -843,6 +1311,30 @@ body {
     }
 }
 
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes glowPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 4px var(--approval);
+    }
+
+    50% {
+        box-shadow: 0 0 12px var(--approval);
+    }
+}
+
 /* ── Health Grid ────────────────────────── */
 .health-grid {
     display: grid;
@@ -872,12 +1364,21 @@ body {
     color: var(--text-primary);
 }
 
-.health-value.ok { color: var(--success); }
-.health-value.warn { color: var(--warning); }
-.health-value.bad { color: var(--danger); }
+.health-value.ok {
+    color: var(--success);
+}
+
+.health-value.warn {
+    color: var(--warning);
+}
+
+.health-value.bad {
+    color: var(--danger);
+}
 
 /* Cron & Remote Cards */
-.cron-card, .remote-card {
+.cron-card,
+.remote-card {
     padding: 10px 12px;
     border-radius: 10px;
     background: var(--bg-tertiary);
@@ -885,18 +1386,21 @@ body {
     margin-bottom: 8px;
 }
 
-.cron-card .cron-name, .remote-card .remote-name {
+.cron-card .cron-name,
+.remote-card .remote-name {
     font-size: 13px;
     font-weight: 500;
     margin-bottom: 4px;
 }
 
-.cron-card .cron-meta, .remote-card .remote-meta {
+.cron-card .cron-meta,
+.remote-card .remote-meta {
     font-size: 11px;
     color: var(--text-muted);
 }
 
-.cron-card .cron-actions, .remote-card .remote-actions {
+.cron-card .cron-actions,
+.remote-card .remote-actions {
     display: flex;
     gap: 6px;
     margin-top: 8px;
@@ -913,9 +1417,32 @@ body {
     font-family: inherit;
     transition: all 0.15s;
 }
+
 .mini-btn:hover {
     border-color: var(--accent);
     color: var(--accent);
+}
+
+/* ── Fleet Status Summary ──────────────── */
+.fleet-status-summary {
+    display: flex;
+    gap: 12px;
+    padding: 8px 16px;
+    font-size: 10px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.fleet-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.fleet-stat .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
 }
 
 /* ── Scrollbar ──────────────────────────── */
@@ -1000,4 +1527,137 @@ body {
     .mobile-menu-btn {
         display: none !important;
     }
+}
+
+/* ── Fleet Summary Bar ────────────────────── */
+.fleet-summary {
+    display: flex;
+    gap: 8px;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.fleet-stat {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.fleet-stat-val {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.fleet-stat-val.fs-online {
+    color: var(--success);
+}
+
+.fleet-stat-val.fs-pending {
+    color: var(--approval);
+}
+
+/* ── Context Menu ─────────────────────────── */
+.context-menu {
+    display: none;
+    position: fixed;
+    z-index: 999;
+    min-width: 160px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px var(--shadow);
+    padding: 4px;
+    animation: fadeIn 0.12s ease;
+}
+
+.context-menu.open {
+    display: block;
+}
+
+.ctx-item {
+    padding: 7px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ctx-item:hover {
+    background: var(--bg-hover);
+}
+
+.ctx-item.ctx-danger {
+    color: var(--danger);
+}
+
+.ctx-item.ctx-danger:hover {
+    background: rgba(248, 113, 113, 0.1);
+}
+
+.ctx-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 8px;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ── Color Picker ─────────────────────────── */
+.color-picker {
+    display: flex;
+    gap: 8px;
+    padding: 8px 0;
+    flex-wrap: wrap;
+}
+
+.color-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.15s;
+}
+
+.color-dot:hover {
+    transform: scale(1.15);
+}
+
+.color-dot.selected {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--text-muted);
+}
+
+/* ── Fleet Card Color Indicator ──────────── */
+.fleet-card-color {
+    width: 3px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    align-self: stretch;
+}
+
+/* ── Pinned Agent ─────────────────────────── */
+.fleet-card.pinned {
+    border-left: 2px solid var(--accent);
+}
+
+.fleet-card.pinned .fleet-name::before {
+    content: '\ud83d\udccc ';
+    font-size: 10px;
 }
