@@ -25,6 +25,7 @@
     let selectedColor = '#7c5cfc';
     let renameTargetId = null;
     let removeTargetId = null;
+    let pendingAgents = JSON.parse(localStorage.getItem('ag-pending-agents') || '[]'); // { id, name, host, port, color }
     const sessionStart = Date.now();
 
     const $ = id => document.getElementById(id);
@@ -99,18 +100,25 @@
         const list = $('fleetList');
         if (!list) return;
 
-        if (cascades.length === 0) {
+        // Merge live cascades + pending (offline) agents
+        const liveIds = new Set(cascades.map(c => c.id));
+        const offlineCards = pendingAgents
+            .filter(p => !liveIds.has(p.id) && !cascades.some(c => (c.port || '').toString() === p.port.toString()))
+            .map(p => ({ ...p, _offline: true }));
+        const allAgents = [...cascades, ...offlineCards];
+
+        if (allAgents.length === 0) {
             list.innerHTML = `<div class="empty-state" style="padding:30px">
                 <div class="icon">🔍</div>
                 <h3>No agents found</h3>
-                <p>Launch Antigravity with<br><code>--remote-debugging-port=9000</code></p>
+                <p>Click <b>+ Add Agent</b> to register one,<br>or launch Antigravity with<br><code>--remote-debugging-port=9000</code></p>
             </div>`;
             updateFleetSummary();
             return;
         }
 
         // Sort: pinned first, then by name
-        const sorted = [...cascades].sort((a, b) => {
+        const sorted = [...allAgents].sort((a, b) => {
             const pa = pinnedAgents.includes(a.id) ? 0 : 1;
             const pb = pinnedAgents.includes(b.id) ? 0 : 1;
             if (pa !== pb) return pa - pb;
@@ -119,21 +127,37 @@
 
         list.innerHTML = sorted.map(c => {
             const active = c.id === currentCascadeId;
-            const phase = getPhase(c.id);
-            const hasApproval = approvalMap[c.id];
+            const isOffline = c._offline;
+            const phase = isOffline ? 'offline' : getPhase(c.id);
+            const hasApproval = !isOffline && approvalMap[c.id];
             const displayPhase = hasApproval ? 'approval' : phase;
             const name = displayName(c);
             const isPinned = pinnedAgents.includes(c.id);
-            const color = agentColors[c.id] || '';
+            const color = isOffline ? (c.color || '') : (agentColors[c.id] || '');
 
             const phaseLabels = {
                 idle: 'Ready',
                 streaming: 'Working...',
                 complete: 'Done',
                 approval: '⚠️ Needs approval',
-                stalled: 'Thinking...'
+                stalled: 'Thinking...',
+                offline: '⏳ Waiting to connect...'
             };
             const phaseLabel = phaseLabels[displayPhase] || displayPhase;
+
+            if (isOffline) {
+                const folderDisplay = c.folder ? `<div class="fleet-preview" title="${escHtml(c.folder)}">${escHtml(shortPath(c.folder))}</div>` : '';
+                return `<div class="fleet-card ${isPinned ? 'pinned' : ''} offline">
+                    ${color ? `<div class="fleet-card-color" style="background:${color}"></div>` : ''}
+                    <div class="fleet-dot offline"></div>
+                    <div class="fleet-info">
+                        <div class="fleet-name">${escHtml(name)}</div>
+                        <div class="fleet-meta">${phaseLabel}</div>
+                        <div class="fleet-preview">${c.host}:${c.port}</div>
+                        ${folderDisplay}
+                    </div>
+                </div>`;
+            }
 
             return `<div class="fleet-card ${active ? 'active' : ''} ${isPinned ? 'pinned' : ''}"
                 onclick="window.AG.selectAgent('${c.id}')"
@@ -182,6 +206,15 @@
         // Extract workspace/project name from Antigravity title
         const parts = title.split(' - ');
         return parts[0].replace('[Antigravity]', '').trim() || parts[0] || title;
+    }
+
+    function shortPath(folderPath) {
+        if (!folderPath) return '';
+        // Show last 2 segments: .../parent/project
+        const sep = folderPath.includes('\\') ? '\\' : '/';
+        const parts = folderPath.split(sep).filter(Boolean);
+        if (parts.length <= 2) return folderPath;
+        return '📁 ' + parts.slice(-2).join(sep);
     }
 
     // ── Agent Selection ─────────────────────────────
@@ -804,44 +837,67 @@
     }
     async function addAgent() {
         const name = $('agentName')?.value?.trim() || '';
+        const folder = $('agentFolder')?.value?.trim() || '';
         const host = $('agentHost')?.value?.trim() || 'localhost';
         const port = parseInt($('agentPort')?.value) || 9001;
         closeAddAgent();
-        showToast(`🔍 Scanning ${host}:${port}...`);
+
+        // Immediately add as pending agent (shows in fleet even if offline)
+        const pendingId = `pending-${host}-${port}`;
+        if (!pendingAgents.find(p => p.host === host && p.port === port)) {
+            pendingAgents.push({
+                id: pendingId,
+                title: name || `${host}:${port}`,
+                name: name,
+                folder: folder,
+                host: host,
+                port: port,
+                color: selectedColor !== '#7c5cfc' ? selectedColor : ''
+            });
+            localStorage.setItem('ag-pending-agents', JSON.stringify(pendingAgents));
+            if (name) { agentNicknames[pendingId] = name; localStorage.setItem('ag-nicknames', JSON.stringify(agentNicknames)); }
+            renderFleet();
+        }
+
+        // Tell backend to scan + auto-launch
         try {
             const res = await fetch('/workspace/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ host, port, name })
+                body: JSON.stringify({ host, port, name, folder })
             });
             const data = await res.json();
             if (data.ok) {
-                showToast(data.isNew ? `✅ Added ${host}:${port}` : `ℹ️ Already scanning ${host}:${port}`);
-                // Save to localStorage for persistence
+                if (data.launched) {
+                    showToast(`🚀 Launching ${name || 'Antigravity'} on port ${port}...`);
+                } else if (folder) {
+                    showToast(`✅ Project added — launch Antigravity manually on port ${port}`);
+                } else {
+                    showToast(`✅ Added — scanning port ${port}`);
+                }
                 const saved = JSON.parse(localStorage.getItem('ag-extra-ports') || '[]');
                 if (!saved.find(s => s.host === host && s.port === port)) {
-                    saved.push({ host, port, name });
+                    saved.push({ host, port, name, folder });
                     localStorage.setItem('ag-extra-ports', JSON.stringify(saved));
                 }
-                // Save color if assigned
-                if (name || selectedColor !== '#7c5cfc') {
-                    // We'll assign color when the cascade shows up
+                if (selectedColor !== '#7c5cfc') {
                     const pendingColors = JSON.parse(localStorage.getItem('ag-pending-colors') || '{}');
                     pendingColors[`${host}:${port}`] = selectedColor;
                     localStorage.setItem('ag-pending-colors', JSON.stringify(pendingColors));
                 }
-                // Save nickname if provided
                 if (name) {
                     const pendingNames = JSON.parse(localStorage.getItem('ag-pending-names') || '{}');
                     pendingNames[`${host}:${port}`] = name;
                     localStorage.setItem('ag-pending-names', JSON.stringify(pendingNames));
                 }
-            } else {
-                showToast(`❌ ${data.reason || 'Failed to add'}`);
             }
         } catch (err) {
-            showToast('❌ ' + (err.message || 'Connection error'));
+            showToast(`⚠️ Backend error — project saved locally, will connect when Antigravity starts`);
         }
+        // Clear form
+        if ($('agentName')) $('agentName').value = '';
+        if ($('agentFolder')) $('agentFolder').value = '';
+        if ($('agentPort')) $('agentPort').value = '9001';
     }
 
     // ── Bulk Scan ──────────────────────────────────

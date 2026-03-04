@@ -16,7 +16,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/css/styles.css?v=10">
+    <link rel="stylesheet" href="/css/styles.css?v=11">
 </head>
 
 <body>
@@ -171,7 +171,7 @@
                 </div>
                 <div class="panel-section">
                     <div class="panel-label">About</div>
-                    <div class="panel-row"><span>Version</span><span class="panel-value">v3.1.0</span></div>
+                    <div class="panel-row"><span>Version</span><span class="panel-value">v3.4.0</span></div>
                     <div class="panel-row"><span>License</span><span class="panel-value">MIT</span></div>
                 </div>
             </div>
@@ -358,11 +358,14 @@
         <div class="modal">
             <div class="modal-header">
                 <h3>Add Agent</h3>
-                <p>Connect to an Antigravity IDE instance</p>
+                <p>Register a project — it will connect when Antigravity starts</p>
             </div>
             <div class="modal-body">
-                <label>Agent Name (optional)</label>
+                <label>Project Name</label>
                 <input type="text" id="agentName" placeholder="e.g. POSKit, DevOps, Blog">
+                <label>Project Folder</label>
+                <input type="text" id="agentFolder" placeholder="C:\Projects\my-app or ~/projects/my-app">
+                <div class="modal-hint">The folder Antigravity will open for this project</div>
                 <label>Host</label>
                 <input type="text" id="agentHost" value="localhost" placeholder="localhost or IP address">
                 <label>CDP Port</label>
@@ -386,10 +389,15 @@
                     <div class="color-dot" data-color="#2dd4bf" style="background:#2dd4bf" onclick="AG.pickColor(this)">
                     </div>
                 </div>
+                <div class="modal-launch-hint">
+                    <span>💡</span>
+                    <span>After adding, launch Antigravity with:<br>
+                        <code>antigravity --remote-debugging-port=&lt;port&gt; &lt;folder&gt;</code></span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="AG.closeAddAgent()">Cancel</button>
-                <button class="btn btn-primary" onclick="AG.addAgent()">Connect</button>
+                <button class="btn btn-primary" onclick="AG.addAgent()">Add Project</button>
             </div>
         </div>
     </div>
@@ -447,7 +455,7 @@
     <!-- Cascade styles injected here -->
     <style id="cascadeStyle"></style>
 
-    <script src="/js/app.js?v=10"></script>
+    <script src="/js/app.js?v=11"></script>
 </body>
 
 </html>

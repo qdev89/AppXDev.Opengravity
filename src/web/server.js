@@ -11,11 +11,14 @@ import { dirname, join } from 'path';
 import { createAuthMiddleware, createRateLimiter, registerAuthRoutes } from '../api/middleware.js';
 import { StreamServer } from '../api/stream.js';
 
+import { Launcher } from '../launcher.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function createWebServer(cdpManager, responseMonitor, opts = {}) {
     const port = opts.port || parseInt(process.env.PORT) || 3000;
     const gateway = opts.gateway || null; // Gateway orchestrator (Phase 1)
+    const launcher = opts.launcher ?? new Launcher();
     const app = express();
     const server = http.createServer(app);
     // If gateway exists, use noServer mode so we can route upgrade requests
@@ -38,12 +41,51 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
         res.json({ cascades: cdpManager.getCascadeList() });
     });
 
-    // ── API: Add workspace (new CDP target) ───────────
+    // ── API: Add workspace + auto-launch ─────────────
     app.post('/workspace/add', (req, res) => {
-        const { host, port } = req.body;
+        const { host, port, name, folder } = req.body;
         if (!port) return res.status(400).json({ ok: false, reason: 'Port required' });
         const isNew = cdpManager.addPort(port, host || '127.0.0.1');
-        res.json({ ok: true, isNew, message: isNew ? `Scanning ${host || '127.0.0.1'}:${port}...` : 'Already scanning this target' });
+
+        // Auto-launch if launcher is available and this is a new target
+        let launchResult = null;
+        if (launcher && folder) {
+            launchResult = launcher.launch({ name, folder, host: host || 'localhost', port });
+        }
+
+        res.json({
+            ok: true,
+            isNew,
+            launched: launchResult?.ok || false,
+            pid: launchResult?.pid || null,
+            message: launchResult?.ok
+                ? `🚀 Launched ${name || 'agent'} on port ${port}`
+                : isNew ? `Scanning ${host || '127.0.0.1'}:${port}...` : 'Already scanning this target'
+        });
+    });
+
+    // ── API: Launch instance manually ─────────────────
+    app.post('/workspace/launch', (req, res) => {
+        if (!launcher) return res.status(503).json({ ok: false, reason: 'Launcher not available' });
+        const { name, folder, host, port } = req.body;
+        if (!port) return res.status(400).json({ ok: false, reason: 'Port required' });
+        const result = launcher.launch({ name, folder, host, port });
+        res.json(result);
+    });
+
+    // ── API: Stop launched instance ───────────────────
+    app.post('/workspace/stop', (req, res) => {
+        if (!launcher) return res.status(503).json({ ok: false, reason: 'Launcher not available' });
+        const { port } = req.body;
+        if (!port) return res.status(400).json({ ok: false, reason: 'Port required' });
+        const result = launcher.stop(port);
+        res.json(result);
+    });
+
+    // ── API: Get launcher status ─────────────────────
+    app.get('/workspace/status', (req, res) => {
+        if (!launcher) return res.json({ processes: {} });
+        res.json({ processes: launcher.getStatus() });
     });
 
     // ── API: List scan targets ────────────────────────

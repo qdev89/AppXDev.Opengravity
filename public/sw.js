@@ -1,7 +1,7 @@
 /**
  * Opengravity Service Worker — PWA offline support + caching
  */
-const CACHE_NAME = 'og-v3';
+const CACHE_NAME = 'og-v4';
 const STATIC_ASSETS = [
     '/',
     '/css/styles.css',
