@@ -1,46 +1,76 @@
 /**
- * Launcher — Auto-launch and manage Antigravity IDE instances.
- * Spawns isolated Antigravity instances with --remote-debugging-port and project folder.
- * 
- * KEY INSIGHT (Windows/Electron):
- * Electron apps use a single-instance lock per user-data-dir. If an Antigravity
- * instance is already running (default profile), launching another instance with
- * the SAME profile just opens a new window in the existing process (ignoring
- * --remote-debugging-port). To create a truly independent instance with CDP enabled,
- * we MUST use a separate --user-data-dir AND ensure no lock file conflicts.
- * 
- * On Windows, we use PowerShell Start-Process for reliable detached process creation.
+ * Launcher — Launch and manage Antigravity IDE instances.
+ *
+ * STRATEGY:
+ * 1. If CDP port is already active → connect directly (someone already ran Antigravity with CDP)
+ * 2. If no existing Antigravity is running → launch fresh with --remote-debugging-port (remoat style)
+ * 3. If Antigravity IS running but without CDP → launch a SECOND instance with:
+ *    --remote-debugging-port + --user-data-dir (for isolation from running instance)
+ *    --extensions-dir (pointing to main profile extensions, so no re-install needed)
+ *
+ * On Windows: uses a .bat file for reliable detached launch.
+ * On Unix: uses spawn with detached:true.
  */
-import { spawn, exec } from 'child_process';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import { spawn, execSync } from 'child_process';
+import { existsSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';
+import * as http from 'http';
 import { log as logger } from './gateway/logger.js';
 
 const log = logger.scope('launcher');
 
+/**
+ * Check if CDP responds on the specified port.
+ */
+function checkPort(port) {
+    return new Promise((resolve) => {
+        const req = http.get(`http://127.0.0.1:${port}/json/list`, (res) => {
+            let data = '';
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => {
+                try { resolve(Array.isArray(JSON.parse(data))); }
+                catch { resolve(false); }
+            });
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+    });
+}
+
+/**
+ * Check if any Antigravity process is currently running.
+ */
+function isAntigravityRunning() {
+    if (process.platform === 'win32') {
+        try {
+            const result = execSync('tasklist /FI "IMAGENAME eq Antigravity.exe" /NH', { encoding: 'utf-8', timeout: 5000 });
+            return result.includes('Antigravity.exe');
+        } catch { return false; }
+    }
+    try {
+        execSync('pgrep -x Antigravity || pgrep -x antigravity', { encoding: 'utf-8', timeout: 5000 });
+        return true;
+    } catch { return false; }
+}
+
 export class Launcher {
     constructor(opts = {}) {
         this.cmd = opts.cmd || process.env.ANTIGRAVITY_CMD || null;
-        this.processes = new Map(); // port → { name, folder, host, port, pid, startedAt }
+        this.processes = new Map();
         this.onStatusChange = opts.onStatusChange || null;
     }
 
     /**
-     * Auto-detect the Antigravity Electron binary path.
-     * Must find the .exe directly on Windows (not the CLI .cmd wrapper).
+     * Auto-detect the Antigravity binary path.
      */
     _detectBinary() {
         if (this.cmd) return this.cmd;
-
         if (process.platform === 'win32') {
-            const home = process.env.USERPROFILE || process.env.HOME || '';
+            const localAppData = process.env.LOCALAPPDATA || '';
             const candidates = [
-                join(home, 'AppData', 'Local', 'Programs', 'Antigravity', 'Antigravity.exe'),
-                join(home, 'AppData', 'Local', 'Programs', 'cursor', 'Cursor.exe'),
-                join(home, 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
-                join(home, 'AppData', 'Local', 'Programs', 'Windsurf', 'Windsurf.exe'),
-                'C:\\Program Files\\Antigravity\\Antigravity.exe',
-                'C:\\Program Files\\Microsoft VS Code\\Code.exe',
+                join(localAppData, 'Programs', 'Antigravity', 'Antigravity.exe'),
+                join(localAppData, 'Programs', 'cursor', 'Cursor.exe'),
+                join(localAppData, 'Programs', 'Microsoft VS Code', 'Code.exe'),
             ];
             for (const p of candidates) {
                 if (existsSync(p)) {
@@ -48,69 +78,132 @@ export class Launcher {
                     return p;
                 }
             }
+            return 'Antigravity.exe';
         }
-
         return 'antigravity';
     }
 
     /**
-     * Prepare an isolated user-data-dir for a port.
-     * Clears any stale lock files from previous crashes.
+     * Prepare user-data-dir for an isolated instance.
+     * Clears stale Electron lock files so we don't get code 9 failures.
      */
-    _prepareProfile(portNum) {
+    _prepareProfile(port) {
         const home = process.env.USERPROFILE || process.env.HOME || '';
-        const profileDir = join(home, '.opengravity', 'profiles', `port-${portNum}`);
-
-        // Create profile dir if it doesn't exist
+        const profileDir = join(home, '.opengravity', 'profiles', `port-${port}`);
         mkdirSync(profileDir, { recursive: true });
 
-        // Clear stale Electron lock files that would cause exit code 9
-        const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
-        for (const f of lockFiles) {
-            const lockPath = join(profileDir, f);
-            try { rmSync(lockPath, { force: true }); } catch { /* ignore */ }
+        // Clear stale Electron singleton locks
+        for (const lock of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+            const lockPath = join(profileDir, lock);
+            try { rmSync(lockPath, { force: true }); } catch { }
         }
 
         return profileDir;
     }
 
     /**
-     * Launch an Antigravity instance for a project.
-     * On Windows, uses PowerShell Start-Process for reliable detached launch.
-     * @param {Object} project - { name, folder, host, port }
-     * @returns {{ ok: boolean, message: string, pid?: number }}
+     * Get the path to the main Antigravity extensions directory.
+     * This allows the isolated instance to use the same extensions.
      */
-    launch(project) {
+    _getExtensionsDir() {
+        const roaming = process.env.APPDATA || process.env.HOME || '';
+        const extDir = join(roaming, 'Antigravity', 'extensions');
+        if (existsSync(extDir)) return extDir;
+
+        // Try alternative paths
+        const home = process.env.USERPROFILE || process.env.HOME || '';
+        const altDir = join(home, '.antigravity', 'extensions');
+        if (existsSync(altDir)) return altDir;
+
+        return null;
+    }
+
+    /**
+     * Build the argument list for launching Antigravity.
+     */
+    _buildArgs(port, folder, { needsIsolation = false } = {}) {
+        const args = [`--remote-debugging-port=${port}`];
+
+        if (needsIsolation) {
+            // Need --user-data-dir to bypass Electron's single-instance lock
+            const profileDir = this._prepareProfile(port);
+            args.push(`--user-data-dir=${profileDir}`);
+
+            // Share extensions from the main profile
+            const extDir = this._getExtensionsDir();
+            if (extDir) {
+                args.push(`--extensions-dir=${extDir}`);
+            }
+
+            args.push('--no-sandbox');
+        }
+
+        if (folder) args.push(folder);
+        return args;
+    }
+
+    /**
+     * Generate a .bat launcher file (Windows only).
+     */
+    _generateBatLauncher(binary, args, port) {
+        const home = process.env.USERPROFILE || '';
+        const launcherDir = join(home, '.opengravity', 'launchers');
+        mkdirSync(launcherDir, { recursive: true });
+
+        const batPath = join(launcherDir, `launch-${port}.bat`);
+        const argsStr = args.map(a => a.includes(' ') ? `"${a}"` : a).join(' ');
+
+        const batContent = [
+            '@echo off',
+            `rem Auto-generated by Opengravity — launch Antigravity on port ${port}`,
+            `start "" "${binary}" ${argsStr}`,
+            `exit /b 0`,
+        ].join('\r\n');
+
+        writeFileSync(batPath, batContent, 'utf-8');
+        log.info(`Generated launcher: ${batPath}`);
+        return batPath;
+    }
+
+    /**
+     * Launch an Antigravity instance for a project.
+     */
+    async launch(project) {
         const { name, folder, host, port } = project;
         const portNum = parseInt(port);
 
-        // Already launched?
         if (this.processes.has(portNum)) {
-            const existing = this.processes.get(portNum);
-            return { ok: false, message: `Already launched on port ${portNum} (PID ${existing.pid})` };
+            return { ok: false, message: `Already launched on port ${portNum}` };
+        }
+
+        // Check if CDP port is already responding (ideal case)
+        const alreadyRunning = await checkPort(portNum);
+        if (alreadyRunning) {
+            log.info(`CDP port ${portNum} already active`);
+            const e = { name: name || `Agent ${portNum}`, folder: folder || '', host: host || 'localhost', port: portNum, pid: null, startedAt: Date.now() };
+            this.processes.set(portNum, e);
+            if (this.onStatusChange) this.onStatusChange(portNum, 'launched');
+            return { ok: true, message: `Port ${portNum} already has CDP active` };
+        }
+
+        // Check if Antigravity is currently running (without CDP on this port)
+        const needsIsolation = isAntigravityRunning();
+        if (needsIsolation) {
+            log.info(`Antigravity already running — will use isolated profile for port ${portNum}`);
+        } else {
+            log.info(`No Antigravity running — launching fresh on port ${portNum}`);
         }
 
         const binary = this._detectBinary();
-        const profileDir = this._prepareProfile(portNum);
+        const args = this._buildArgs(portNum, folder, { needsIsolation });
 
-        // Build arguments
-        const extraArgs = [];
-        if (folder) extraArgs.push(`"${folder}"`);
-
-        const allArgs = [
-            `--remote-debugging-port=${portNum}`,
-            `--user-data-dir="${profileDir}"`,
-            '--no-sandbox',
-            ...extraArgs,
-        ].join(' ');
-
-        log.info(`Launching: "${binary}" ${allArgs}`);
+        log.info(`Launching: "${binary}" ${args.join(' ')}`);
 
         try {
             if (process.platform === 'win32') {
-                return this._launchWindows(binary, allArgs, portNum, name, folder, host);
+                return this._launchWindows(binary, args, portNum, name, folder, host);
             } else {
-                return this._launchUnix(binary, allArgs, portNum, name, folder, host);
+                return this._launchUnix(binary, args, portNum, name, folder, host);
             }
         } catch (err) {
             log.error(`Launch failed: ${err.message}`);
@@ -119,113 +212,71 @@ export class Launcher {
     }
 
     /**
-     * Windows launch — uses cmd /c start to create a truly independent process.
-     * This bypasses Electron's single-instance lock issues with Node's spawn.
+     * Windows launch — .bat file with `start ""` for true process isolation.
      */
-    _launchWindows(binary, allArgs, portNum, name, folder, host) {
-        // Use cmd /c start "" to launch a fully detached process
-        // The empty quotes after 'start' are the window title (required when binary path has spaces)
-        const cmd = `start "" "${binary}" ${allArgs}`;
-        
-        log.info(`Windows launch cmd: ${cmd}`);
+    _launchWindows(binary, args, portNum, name, folder, host) {
+        const batPath = this._generateBatLauncher(binary, args, portNum);
 
-        exec(cmd, { windowsHide: false, shell: 'cmd.exe' }, (err) => {
-            if (err) {
-                log.error(`Windows launch error: ${err.message}`);
-                this.processes.delete(portNum);
-                if (this.onStatusChange) this.onStatusChange(portNum, 'error', err.message);
-            }
-        });
-
-        const entry = {
-            name: name || `Agent ${portNum}`,
-            folder: folder || '',
-            host: host || 'localhost',
-            port: portNum,
-            pid: null, // cmd /c start doesn't give us the PID directly
-            startedAt: Date.now(),
-        };
-        this.processes.set(portNum, entry);
-
-        log.info(`Started ${entry.name} on port ${portNum} via cmd /c start`);
-        if (this.onStatusChange) this.onStatusChange(portNum, 'launched');
-
-        // After a delay, try to discover the actual PID
-        setTimeout(() => this._discoverPid(portNum), 5000);
-
-        return { ok: true, message: `Launched ${entry.name} on port ${portNum}` };
-    }
-
-    /**
-     * Unix launch — standard spawn with detached
-     */
-    _launchUnix(binary, allArgs, portNum, name, folder, host) {
-        const args = allArgs.replace(/"/g, '').split(' ');
-        const proc = spawn(binary, args, {
+        const child = spawn('cmd', ['/c', batPath], {
             detached: true,
             stdio: 'ignore',
+            windowsHide: true,
         });
-        proc.unref();
+        child.unref();
 
         const entry = {
             name: name || `Agent ${portNum}`,
-            folder: folder || '',
-            host: host || 'localhost',
-            port: portNum,
-            pid: proc.pid,
-            startedAt: Date.now(),
+            folder: folder || '', host: host || 'localhost', port: portNum,
+            pid: child.pid, startedAt: Date.now(),
         };
         this.processes.set(portNum, entry);
 
-        proc.on('exit', (code) => {
-            // Electron parent fork exits normally (code 0) — the real app keeps running
-            log.info(`Port ${portNum}: Parent exited (code=${code}), app should be running`);
+        child.on('exit', (code) => {
+            log.info(`Port ${portNum}: Bat launcher exited (code=${code})`);
         });
-
-        proc.on('error', (err) => {
+        child.on('error', (err) => {
             log.error(`Failed to launch on port ${portNum}: ${err.message}`);
             this.processes.delete(portNum);
             if (this.onStatusChange) this.onStatusChange(portNum, 'error', err.message);
         });
 
-        log.info(`Started ${entry.name} on port ${portNum} (PID ${proc.pid})`);
-        if (this.onStatusChange) this.onStatusChange(portNum, 'launched', proc.pid);
-
-        return { ok: true, message: `Launched ${entry.name} on port ${portNum}`, pid: proc.pid };
+        log.info(`Started ${entry.name} on port ${portNum} via .bat launcher`);
+        if (this.onStatusChange) this.onStatusChange(portNum, 'launched', child.pid);
+        return { ok: true, message: `Launched ${entry.name} on port ${portNum}`, pid: child.pid };
     }
 
     /**
-     * Try to discover the PID of the launched Antigravity instance by checking
-     * which process is listening on the CDP port.
+     * Unix launch — spawn detached.
      */
-    _discoverPid(portNum) {
-        if (process.platform !== 'win32') return;
-        
-        exec(`netstat -nao | findstr ":${portNum}.*LISTENING"`, (err, stdout) => {
-            if (err || !stdout) return;
-            // Parse: TCP    127.0.0.1:9009    0.0.0.0:0    LISTENING    12345
-            const match = stdout.trim().match(/LISTENING\s+(\d+)/);
-            if (match) {
-                const pid = parseInt(match[1]);
-                const entry = this.processes.get(portNum);
-                if (entry) {
-                    entry.pid = pid;
-                    log.info(`Port ${portNum}: Discovered PID ${pid}`);
-                }
-            }
+    _launchUnix(binary, args, portNum, name, folder, host) {
+        const child = spawn(binary, args, { detached: true, stdio: 'ignore' });
+        child.unref();
+
+        const entry = {
+            name: name || `Agent ${portNum}`,
+            folder: folder || '', host: host || 'localhost', port: portNum,
+            pid: child.pid, startedAt: Date.now(),
+        };
+        this.processes.set(portNum, entry);
+
+        child.on('exit', (code) => {
+            log.info(`Port ${portNum}: Parent exited (code=${code})`);
         });
+        child.on('error', (err) => {
+            log.error(`Failed to launch on port ${portNum}: ${err.message}`);
+            this.processes.delete(portNum);
+            if (this.onStatusChange) this.onStatusChange(portNum, 'error', err.message);
+        });
+
+        log.info(`Started ${entry.name} on port ${portNum} (PID ${child.pid})`);
+        if (this.onStatusChange) this.onStatusChange(portNum, 'launched', child.pid);
+        return { ok: true, message: `Launched ${entry.name} on port ${portNum}`, pid: child.pid };
     }
 
-    /**
-     * Stop a running instance by port
-     */
     stop(port) {
         const portNum = parseInt(port);
         const entry = this.processes.get(portNum);
-        if (!entry) {
-            return { ok: false, message: `No process tracked on port ${portNum}` };
-        }
-
+        if (!entry) return { ok: false, message: `No process found on port ${portNum}` };
         try {
             if (entry.pid) {
                 if (process.platform === 'win32') {
@@ -235,38 +286,19 @@ export class Launcher {
                 }
             }
             this.processes.delete(portNum);
-            log.info(`Stopped process on port ${portNum}`);
             return { ok: true, message: `Stopped ${entry.name} on port ${portNum}` };
         } catch (err) {
             return { ok: false, message: `Failed to stop: ${err.message}` };
         }
     }
 
-    /**
-     * Get status of all managed processes
-     */
     getStatus() {
-        const result = {};
-        for (const [port, entry] of this.processes) {
-            result[port] = {
-                name: entry.name,
-                folder: entry.folder,
-                host: entry.host,
-                port: entry.port,
-                pid: entry.pid,
-                startedAt: entry.startedAt,
-            };
-        }
-        return result;
+        const r = {};
+        for (const [port, entry] of this.processes) r[port] = { ...entry };
+        return r;
     }
 
-    /**
-     * Stop all managed processes
-     */
     stopAll() {
-        for (const [port] of this.processes) {
-            this.stop(port);
-        }
-        log.info('All managed processes stopped');
+        for (const [p] of this.processes) this.stop(p);
     }
 }

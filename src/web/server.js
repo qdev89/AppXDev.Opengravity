@@ -42,7 +42,7 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
     });
 
     // ── API: Add workspace + auto-launch ─────────────
-    app.post('/workspace/add', (req, res) => {
+    app.post('/workspace/add', async (req, res) => {
         const { host, port, name, folder } = req.body;
         if (!port) return res.status(400).json({ ok: false, reason: 'Port required' });
         const isNew = cdpManager.addPort(port, host || '127.0.0.1');
@@ -50,7 +50,7 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
         // Auto-launch if launcher is available and this is a new target
         let launchResult = null;
         if (launcher && folder) {
-            launchResult = launcher.launch({ name, folder, host: host || 'localhost', port });
+            launchResult = await launcher.launch({ name, folder, host: host || 'localhost', port });
         }
 
         res.json({
@@ -65,13 +65,13 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
     });
 
     // ── API: Launch instance manually ─────────────────
-    app.post('/workspace/launch', (req, res) => {
+    app.post('/workspace/launch', async (req, res) => {
         if (!launcher) return res.status(503).json({ ok: false, reason: 'Launcher not available' });
         const { name, folder, host, port } = req.body;
         if (!port) return res.status(400).json({ ok: false, reason: 'Port required' });
         // Also register the port for CDP scanning
         cdpManager.addPort(port, host || '127.0.0.1');
-        const result = launcher.launch({ name, folder, host, port });
+        const result = await launcher.launch({ name, folder, host, port });
         res.json(result);
     });
 
