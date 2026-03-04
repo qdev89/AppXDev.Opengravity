@@ -155,11 +155,18 @@ export class Launcher {
         const { name, folder, host, port } = project;
         const portNum = parseInt(port);
 
+        // If port is tracked, check if CDP is actually still alive
         if (this.processes.has(portNum)) {
-            return { ok: false, message: `Already launched on port ${portNum}` };
+            const alive = await checkPort(portNum);
+            if (alive) {
+                return { ok: true, message: `Port ${portNum} is already active and connected` };
+            }
+            // CDP is dead — clear stale entry and re-launch
+            log.info(`Port ${portNum} was tracked but CDP is dead — re-launching`);
+            this.processes.delete(portNum);
         }
 
-        // Check if CDP port is already responding (ideal case)
+        // Check if CDP port is already responding (someone else launched it)
         const alreadyRunning = await checkPort(portNum);
         if (alreadyRunning) {
             log.info(`CDP port ${portNum} already active`);

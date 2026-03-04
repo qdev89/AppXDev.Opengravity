@@ -187,7 +187,11 @@
     }
 
     function updateFleetSummary() {
-        const total = cascades.length;
+        // Count live cascades + unique pending agents
+        const liveIds = new Set(cascades.map(c => c.id));
+        const livePorts = new Set(cascades.map(c => (c.port || '').toString()));
+        const uniquePending = pendingAgents.filter(p => !liveIds.has(p.id) && !livePorts.has(p.port.toString()));
+        const total = cascades.length + uniquePending.length;
         const online = cascades.filter(c => getPhase(c.id) !== 'offline').length;
         const pending = Object.keys(approvalMap).length;
         const setVal = (id, val) => { const el = $(id); if (el) el.textContent = val; };
