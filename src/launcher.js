@@ -101,22 +101,6 @@ export class Launcher {
         return profileDir;
     }
 
-    /**
-     * Get the path to the main Antigravity extensions directory.
-     * This allows the isolated instance to use the same extensions.
-     */
-    _getExtensionsDir() {
-        const roaming = process.env.APPDATA || process.env.HOME || '';
-        const extDir = join(roaming, 'Antigravity', 'extensions');
-        if (existsSync(extDir)) return extDir;
-
-        // Try alternative paths
-        const home = process.env.USERPROFILE || process.env.HOME || '';
-        const altDir = join(home, '.antigravity', 'extensions');
-        if (existsSync(altDir)) return altDir;
-
-        return null;
-    }
 
     /**
      * Build the argument list for launching Antigravity.
@@ -129,11 +113,10 @@ export class Launcher {
             const profileDir = this._prepareProfile(port);
             args.push(`--user-data-dir=${profileDir}`);
 
-            // Share extensions from the main profile
-            const extDir = this._getExtensionsDir();
-            if (extDir) {
-                args.push(`--extensions-dir=${extDir}`);
-            }
+            // CRITICAL: Disable ALL extensions — some extensions (e.g. AG Auto Click & Scroll)
+            // start their own CDP listeners which hijack and kill the main CDP connection.
+            // A clean instance without extensions is required for reliable CDP control.
+            args.push('--disable-extensions');
 
             args.push('--no-sandbox');
         }
