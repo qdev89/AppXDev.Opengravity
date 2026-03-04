@@ -134,7 +134,7 @@ export class Launcher {
         mkdirSync(launcherDir, { recursive: true });
 
         const batPath = join(launcherDir, `launch-${port}.bat`);
-        const argsStr = args.map(a => a.includes(' ') ? `"${a}"` : a).join(' ');
+        const argsStr = args.map(a => `"${a}"`).join(' ');
 
         const batContent = [
             '@echo off',

@@ -157,7 +157,7 @@
                         ${folderDisplay}
                     </div>
                     <div class="fleet-actions">
-                        <button class="fleet-run-btn" onclick="event.stopPropagation();window.AG.launchAgent('${c.host}',${c.port},'${escHtml(c.name || '')}','${escHtml(c.folder || '')}')" title="Launch Antigravity">▶</button>
+                        <button class="fleet-run-btn" onclick="event.stopPropagation();window.AG.launchAgent('${c.host}',${c.port},'${escHtml((c.name || '').replace(/\\/g, '\\\\'))}','${escHtml((c.folder || '').replace(/\\/g, '\\\\'))}')" title="Launch Antigravity">▶</button>
                         <button class="fleet-remove-btn" onclick="event.stopPropagation();window.AG.removePending('${c.host}',${c.port})" title="Remove">✕</button>
                     </div>
                 </div>`;
