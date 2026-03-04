@@ -1149,6 +1149,10 @@
         if (panel === 'health') refreshHealth();
         if (panel === 'cron') loadCron();
         if (panel === 'remotes') loadRemotes();
+        // On mobile, open sidebar when clicking nav items
+        if (window.innerWidth <= 768) {
+            document.querySelector('.sidebar')?.classList.add('open');
+        }
     }
 
     // ── Health Panel ──────────────────────────────
@@ -1289,6 +1293,11 @@
     // ── Mobile ─────────────────────────────────────
     function toggleSidebar() {
         document.querySelector('.sidebar')?.classList.toggle('open');
+    }
+    function closeSidebarMobile() {
+        if (window.innerWidth <= 768) {
+            document.querySelector('.sidebar')?.classList.remove('open');
+        }
     }
 
     // ── Init ───────────────────────────────────────
