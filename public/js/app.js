@@ -874,6 +874,7 @@
             });
             localStorage.setItem('ag-pending-agents', JSON.stringify(pendingAgents));
             if (name) { agentNicknames[pendingId] = name; localStorage.setItem('ag-nicknames', JSON.stringify(agentNicknames)); }
+            saveProjectToServer({ name, host, port, folder, color: selectedColor !== '#7c5cfc' ? selectedColor : '' });
             renderFleet();
         }
 
@@ -945,6 +946,7 @@
         const saved = JSON.parse(localStorage.getItem('ag-extra-ports') || '[]');
         const filtered = saved.filter(s => !(s.host === host && s.port === port));
         localStorage.setItem('ag-extra-ports', JSON.stringify(filtered));
+        deleteProjectFromServer(host, port);
         renderFleet();
         showToast(`🗑️ Removed ${host}:${port}`);
     }
@@ -1310,13 +1312,78 @@
         }
     }
 
+    // ── Server-side project sync ──────────────────
+    async function loadServerProjects() {
+        try {
+            const res = await fetch('/api/v1/projects');
+            if (!res.ok) return;
+            const { projects } = await res.json();
+            if (!projects || projects.length === 0) {
+                // If server has no projects but localStorage does, push local to server
+                if (pendingAgents.length > 0) {
+                    for (const p of pendingAgents) {
+                        saveProjectToServer(p);
+                    }
+                }
+                return;
+            }
+            // Merge server projects into pendingAgents (server is source of truth)
+            const localByPort = new Map(pendingAgents.map(p => [`${p.host || 'localhost'}:${p.port}`, p]));
+            for (const sp of projects) {
+                const key = `${sp.host || 'localhost'}:${sp.port}`;
+                if (!localByPort.has(key)) {
+                    const pendingId = `pending-${sp.host || 'localhost'}-${sp.port}`;
+                    pendingAgents.push({
+                        id: pendingId,
+                        title: sp.name || `${sp.host}:${sp.port}`,
+                        name: sp.name || '',
+                        folder: sp.folder || '',
+                        host: sp.host || 'localhost',
+                        port: sp.port,
+                        color: sp.color || ''
+                    });
+                    if (sp.name) {
+                        agentNicknames[pendingId] = sp.name;
+                    }
+                }
+            }
+            localStorage.setItem('ag-pending-agents', JSON.stringify(pendingAgents));
+            localStorage.setItem('ag-nicknames', JSON.stringify(agentNicknames));
+            renderFleet();
+        } catch (e) {
+            console.warn('Could not load server projects:', e);
+        }
+    }
+
+    function saveProjectToServer(agent) {
+        fetch('/api/v1/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: agent.name || '',
+                host: agent.host || 'localhost',
+                port: agent.port,
+                folder: agent.folder || '',
+                color: agent.color || ''
+            })
+        }).catch(e => console.warn('Failed to save project:', e));
+    }
+
+    function deleteProjectFromServer(host, port) {
+        fetch(`/api/v1/projects/${port}?host=${encodeURIComponent(host || 'localhost')}`, {
+            method: 'DELETE'
+        }).catch(e => console.warn('Failed to delete project:', e));
+    }
+
     // ── Init ───────────────────────────────────────
     function init() {
         initTheme();
         requestNotifications();
-        restoreSavedPorts();
-        connect();
-        startAutoRefresh();
+        loadServerProjects().then(() => {
+            restoreSavedPorts();
+            connect();
+            startAutoRefresh();
+        });
         renderHistory();
         // Update auto-accept badge
         const badge = $('autoAcceptBadge');

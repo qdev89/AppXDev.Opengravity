@@ -8,10 +8,24 @@
     "maxQueueSize": 50,
     "port": 3000
   },
-  "cdpPorts": [9000, 9001, 9002, 9003],
+  "cdpPorts": [
+    9000,
+    9001,
+    9002,
+    9003
+  ],
   "cron": [],
   "telegram": {
-    "token": "",
-    "allowedUsers": ""
-  }
+    "token": "8418901035:AAHX5HdHyL1ECOz9SCFmqlZKV0tK_Yz1330",
+    "allowedUsers": "823144542"
+  },
+  "projects": [
+    {
+      "name": "POSKit",
+      "host": "localhost",
+      "port": 9001,
+      "folder": "C:\\Users\\Anh Quoc\\Documents\\GitHub\\AppXDev.POSKit",
+      "color": "#22c55e"
+    }
+  ]
 }

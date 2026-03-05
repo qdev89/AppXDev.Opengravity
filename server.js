@@ -106,6 +106,7 @@ async function main() {
     const web = createWebServer(cdp, monitor, {
         port: cfg.defaults.port,
         gateway,
+        config,
     });
 
     // ── 8. Telegram Bot — mobile remote control ──

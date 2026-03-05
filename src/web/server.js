@@ -95,6 +95,43 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
         res.json({ ports: cdpManager.ports });
     });
 
+    // ── API: Server-side project persistence ──────────
+    app.get('/api/v1/projects', (req, res) => {
+        const cfg = opts.config;
+        res.json({ projects: cfg?.val('projects', []) || [] });
+    });
+
+    app.post('/api/v1/projects', (req, res) => {
+        const cfg = opts.config;
+        if (!cfg) return res.status(503).json({ ok: false, reason: 'Config not available' });
+        const { name, host, port, folder, color } = req.body;
+        if (!port) return res.status(400).json({ ok: false, reason: 'Port required' });
+
+        const projects = cfg.val('projects', []);
+        // Upsert by host+port
+        const existing = projects.findIndex(p => p.host === (host || 'localhost') && p.port === port);
+        const project = { name: name || '', host: host || 'localhost', port, folder: folder || '', color: color || '' };
+        if (existing >= 0) {
+            projects[existing] = project;
+        } else {
+            projects.push(project);
+        }
+        cfg.get().projects = projects;
+        cfg.save();
+        res.json({ ok: true, project });
+    });
+
+    app.delete('/api/v1/projects/:port', (req, res) => {
+        const cfg = opts.config;
+        if (!cfg) return res.status(503).json({ ok: false, reason: 'Config not available' });
+        const port = parseInt(req.params.port);
+        const host = req.query.host || 'localhost';
+        const projects = cfg.val('projects', []);
+        cfg.get().projects = projects.filter(p => !(p.port === port && p.host === host));
+        cfg.save();
+        res.json({ ok: true });
+    });
+
     // ── API: Get cascade snapshot ─────────────────────
     app.get('/snapshot/:id', (req, res) => {
         const cascade = cdpManager.cascades.get(req.params.id);
