@@ -1819,7 +1819,8 @@ body {
     }
 
     .input-bar .input-wrapper textarea {
-        font-size: 16px; /* prevents iOS zoom */
+        font-size: 16px;
+        /* prevents iOS zoom */
         padding: 10px 36px 10px 12px;
         min-height: 42px;
         border-radius: 20px;
@@ -1862,7 +1863,8 @@ body {
 
     .modal-body input,
     .modal-body select {
-        font-size: 16px; /* prevents iOS zoom */
+        font-size: 16px;
+        /* prevents iOS zoom */
         padding: 10px 12px;
     }
 
@@ -2035,4 +2037,192 @@ body {
 .fleet-card.pinned .fleet-name::before {
     content: '\ud83d\udccc ';
     font-size: 10px;
+}
+
+/* ── Status-First Agent Cards ─────────────── */
+.fleet-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.fleet-card.streaming .fleet-status {
+    color: var(--streaming);
+    font-weight: 500;
+}
+
+.fleet-card.complete .fleet-status {
+    color: var(--success);
+}
+
+.fleet-card.approval .fleet-status {
+    color: var(--approval);
+    font-weight: 600;
+}
+
+.fleet-card.stalled .fleet-status {
+    color: #a78bfa;
+}
+
+.fleet-card.streaming {
+    border-left: 2px solid var(--streaming);
+}
+
+.fleet-card.approval {
+    border-left: 2px solid var(--approval);
+    animation: approval-glow 2s ease-in-out infinite;
+}
+
+@keyframes approval-glow {
+
+    0%,
+    100% {
+        box-shadow: none;
+    }
+
+    50% {
+        box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+    }
+}
+
+.fleet-stats {
+    font-size: 9px;
+    color: var(--text-muted);
+    opacity: 0.7;
+    margin-left: 6px;
+    white-space: nowrap;
+}
+
+/* ── In-Chat Approval Card ────────────────── */
+.chat-approval-card {
+    margin: 16px auto;
+    max-width: 440px;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(251, 146, 60, 0.08));
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    border-radius: 16px;
+    padding: 16px;
+    backdrop-filter: blur(12px);
+    animation: approval-slide-in 0.3s ease-out;
+}
+
+@keyframes approval-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.chat-approval-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.chat-approval-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.chat-approval-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.chat-approval-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fbbf24;
+}
+
+.chat-approval-text {
+    font-size: 12px;
+    color: var(--text-secondary, #ccc);
+    margin-top: 4px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.chat-approval-time {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.chat-approval-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.chat-approval-btn {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.chat-approval-btn.accept {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+}
+
+.chat-approval-btn.accept:hover,
+.chat-approval-btn.accept:active {
+    transform: scale(1.03);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+}
+
+.chat-approval-btn.accept-all {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+}
+
+.chat-approval-btn.accept-all:hover,
+.chat-approval-btn.accept-all:active {
+    transform: scale(1.03);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.chat-approval-btn.deny {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.chat-approval-btn.deny:hover,
+.chat-approval-btn.deny:active {
+    background: rgba(248, 113, 113, 0.25);
+    transform: scale(1.03);
+}
+
+/* Mobile: larger touch targets for approval cards */
+@media (max-width: 768px) {
+    .chat-approval-card {
+        margin: 12px 8px;
+        padding: 14px;
+    }
+
+    .chat-approval-btn {
+        padding: 12px 10px;
+        font-size: 14px;
+        min-height: 44px;
+    }
+
+    .chat-approval-actions {
+        gap: 6px;
+    }
 }

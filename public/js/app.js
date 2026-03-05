@@ -4,7 +4,8 @@
     let cascades = [];
     let currentCascadeId = null;
     let ws = null;
-    let phaseMap = {};
+    let phaseMap = {};          // cascadeId → phase string
+    let phaseTimestamps = {};   // cascadeId → { phase, since, title }
     let approvalMap = {};      // cascadeId → { text, time }
     let approvalLog = JSON.parse(localStorage.getItem('ag-approval-log') || '[]');
     let perAgentAutoAccept = JSON.parse(localStorage.getItem('ag-per-agent-aa') || '{}');
@@ -138,31 +139,21 @@
         list.innerHTML = sorted.map(c => {
             const active = c.id === currentCascadeId;
             const isOffline = c._offline;
-            const phase = isOffline ? 'offline' : getPhase(c.id);
-            const hasApproval = !isOffline && approvalMap[c.id];
-            const displayPhase = hasApproval ? 'approval' : phase;
             const name = displayName(c);
             const isPinned = pinnedAgents.includes(c.id);
             const color = isOffline ? (c.color || '') : (agentColors[c.id] || '');
-
-            const phaseLabels = {
-                idle: 'Ready',
-                streaming: 'Working...',
-                complete: 'Done',
-                approval: '⚠️ Needs approval',
-                stalled: 'Thinking...',
-                offline: '⏳ Waiting to connect...'
-            };
-            const phaseLabel = phaseLabels[displayPhase] || displayPhase;
+            const status = getStatusLabel(c.id, isOffline);
+            const stats = perAgentStats[c.id];
+            const statsHtml = stats ? `<span class="fleet-stats">📤${stats.sent || 0} ✅${stats.completed || 0}</span>` : '';
 
             if (isOffline) {
-                const folderDisplay = c.folder ? `<div class="fleet-preview" title="${escHtml(c.folder)}">${escHtml(shortPath(c.folder))}</div>` : '';
+                const folderDisplay = c.folder ? `<div class="fleet-preview" title="${escHtml(c.folder)}">📁 ${escHtml(shortPath(c.folder))}</div>` : '';
                 return `<div class="fleet-card ${isPinned ? 'pinned' : ''} offline">
                     ${color ? `<div class="fleet-card-color" style="background:${color}"></div>` : ''}
                     <div class="fleet-dot offline"></div>
                     <div class="fleet-info">
                         <div class="fleet-name">${escHtml(name)}</div>
-                        <div class="fleet-meta">${phaseLabel}</div>
+                        <div class="fleet-status">${status.icon} ${status.text}</div>
                         <div class="fleet-preview">${c.host}:${c.port}</div>
                         ${folderDisplay}
                     </div>
@@ -173,17 +164,14 @@
                 </div>`;
             }
 
-            return `<div class="fleet-card ${active ? 'active' : ''} ${isPinned ? 'pinned' : ''}"
+            return `<div class="fleet-card ${active ? 'active' : ''} ${isPinned ? 'pinned' : ''} ${status.cls}"
                 onclick="window.AG.selectAgent('${c.id}')"
                 oncontextmenu="event.preventDefault();window.AG.showCtxMenu(event,'${c.id}')">
                 ${color ? `<div class="fleet-card-color" style="background:${color}"></div>` : ''}
-                <div class="fleet-dot ${displayPhase}"></div>
+                <div class="fleet-dot ${status.cls}"></div>
                 <div class="fleet-info">
-                    <div class="fleet-name">${escHtml(name)}</div>
-                    <div class="fleet-meta">
-                        ${phaseLabel}
-                        ${hasApproval ? '<span class="fleet-approval-badge">⚠ Approval</span>' : ''}
-                    </div>
+                    <div class="fleet-name">${escHtml(name)} ${statsHtml}</div>
+                    <div class="fleet-status">${status.icon} ${status.text}</div>
                     <div class="fleet-preview">${c.window || 'Port ' + (c.port || '9000')}</div>
                 </div>
             </div>`;
@@ -298,7 +286,29 @@
                 </div>`;
             }).join('');
 
-            chatContent.innerHTML = bubblesHtml + `<div class="chat-mirror">${data.html}</div>`;
+            // In-chat approval card (inline in message stream)
+            let approvalCardHtml = '';
+            if (approvalMap[id]) {
+                const ap = approvalMap[id];
+                const ago = timeAgo(ap.time);
+                approvalCardHtml = `<div class="chat-approval-card">
+                    <div class="chat-approval-header">
+                        <span class="chat-approval-icon">⚠️</span>
+                        <div class="chat-approval-info">
+                            <div class="chat-approval-title">Approval Required</div>
+                            <div class="chat-approval-text">${escHtml(ap.text)}</div>
+                            <div class="chat-approval-time">${ago}</div>
+                        </div>
+                    </div>
+                    <div class="chat-approval-actions">
+                        <button class="chat-approval-btn accept" onclick="window.AG.acceptConfirmation()">✅ Accept</button>
+                        <button class="chat-approval-btn accept-all" onclick="window.AG.acceptAllConfirmations()">✅ All</button>
+                        <button class="chat-approval-btn deny" onclick="window.AG.denyConfirmation()">❌ Deny</button>
+                    </div>
+                </div>`;
+            }
+
+            chatContent.innerHTML = bubblesHtml + `<div class="chat-mirror">${data.html}</div>` + approvalCardHtml;
 
             // Update message count
             updateChatMsgCount(sentForAgent.length);
@@ -376,7 +386,14 @@
 
     // ── Phase ──────────────────────────────────────
     function updatePhase(phase, cascadeId, title) {
-        if (cascadeId) phaseMap[cascadeId] = phase;
+        if (cascadeId) {
+            phaseMap[cascadeId] = phase;
+            // Track timestamps for status-first display
+            const prev = phaseTimestamps[cascadeId];
+            if (!prev || prev.phase !== phase) {
+                phaseTimestamps[cascadeId] = { phase, since: Date.now(), title: title || prev?.title };
+            }
+        }
         if (!cascadeId || cascadeId === currentCascadeId) {
             const badge = $('statusBadge');
             const text = $('statusText');
@@ -386,6 +403,10 @@
             updateTypingIndicator(phase);
         }
         renderFleet();
+        // Also inject/update in-chat approval card when phase changes
+        if (cascadeId === currentCascadeId) {
+            updateChat(currentCascadeId);
+        }
         if (phase === 'complete') {
             tasksCompleted++;
             const name = title || shortTitle((cascades.find(c => c.id === cascadeId) || {}).title) || 'Antigravity';
@@ -394,13 +415,11 @@
             if (notificationsEnabled && document.hidden) {
                 new Notification('AG Mission Control', { body: `✅ ${name} — Task complete`, tag: 'ag-' + cascadeId });
             }
-            // Update per-agent stats
             if (cascadeId) {
                 if (!perAgentStats[cascadeId]) perAgentStats[cascadeId] = { sent: 0, completed: 0 };
                 perAgentStats[cascadeId].completed++;
                 saveAgentStats();
             }
-            // Update task history — mark latest task for this cascade as complete
             const historyTask = taskHistory.find(t => t.cascadeId === cascadeId && t.status === 'running');
             if (historyTask) {
                 historyTask.status = 'complete';
@@ -412,6 +431,29 @@
         }
         if (phase === 'streaming' && cascadeId === currentCascadeId) showToast('⚡ Agent started...');
         startAutoRefresh();
+    }
+
+    function timeAgo(ts) {
+        const sec = Math.round((Date.now() - ts) / 1000);
+        if (sec < 5) return 'just now';
+        if (sec < 60) return `${sec}s ago`;
+        if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+        return `${Math.floor(sec / 3600)}h ago`;
+    }
+
+    function getStatusLabel(cascadeId, isOffline) {
+        if (isOffline) return { icon: '⏳', text: 'Waiting to connect...', cls: 'offline' };
+        const hasApproval = approvalMap[cascadeId];
+        if (hasApproval) return { icon: '⚠️', text: 'Needs approval', cls: 'approval' };
+        const phase = getPhase(cascadeId);
+        const ts = phaseTimestamps[cascadeId];
+        const ago = ts ? timeAgo(ts.since) : '';
+        switch (phase) {
+            case 'streaming': return { icon: '⚡', text: `Working... (${ago})`, cls: 'streaming' };
+            case 'complete': return { icon: '✅', text: `Done ${ago}`, cls: 'complete' };
+            case 'stalled': return { icon: '🤔', text: `Thinking... (${ago})`, cls: 'stalled' };
+            default: return { icon: '💤', text: 'Ready', cls: 'idle' };
+        }
     }
 
     // ── Approval Detection ──────────────────────────
