@@ -83,6 +83,16 @@
             const data = JSON.parse(event.data);
             if (data.type === 'cascade_list') {
                 cascades = data.cascades;
+                // Auto-map nicknames from pending agents by port
+                cascades.forEach(c => {
+                    if (!agentNicknames[c.id]) {
+                        const match = pendingAgents.find(p => c.port && p.port && p.port.toString() === c.port.toString() && p.name);
+                        if (match) {
+                            agentNicknames[c.id] = match.name;
+                            localStorage.setItem('ag-nicknames', JSON.stringify(agentNicknames));
+                        }
+                    }
+                });
                 renderFleet();
                 if (!currentCascadeId && cascades.length > 0) selectAgent(cascades[0].id);
             }

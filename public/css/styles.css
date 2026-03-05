@@ -1562,7 +1562,7 @@ body {
         --topbar-height: 48px;
         --input-height: 56px;
         --nav-width: 0px;
-        --bottomnav-height: 56px;
+        --bottomnav-height: 64px;
     }
 
     /* Hide desktop nav rail */
@@ -1579,9 +1579,12 @@ body {
         border-right: none;
         border-top: 1px solid var(--border);
         z-index: 300;
-        background: var(--bg-secondary);
+        background: var(--glass);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         justify-content: space-around;
-        padding-bottom: env(safe-area-inset-bottom, 0);
+        padding: 6px 4px;
+        padding-bottom: calc(6px + env(safe-area-inset-bottom, 0));
     }
 
     .nav-logo {
