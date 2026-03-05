@@ -6,6 +6,8 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>AG Mission Control</title>
+    <link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg">
+    <link rel="shortcut icon" href="/icons/icon-192.svg">
     <meta name="description" content="Fleet Agent Dashboard for managing multiple Antigravity IDE instances">
     <meta name="theme-color" content="#0a0a0f">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,7 +18,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/css/styles.css?v=13">
+    <link rel="stylesheet" href="/css/styles.css?v=14">
 </head>
 
 <body>
@@ -357,8 +359,8 @@
     <div class="modal-overlay" id="addAgentModal">
         <div class="modal">
             <div class="modal-header">
-                <h3>Add Agent</h3>
-                <p>Register a project — it will connect when Antigravity starts</p>
+                <h3 id="addAgentTitle">Add Agent</h3>
+                <p id="addAgentSubtitle">Register a project — it will connect when Antigravity starts</p>
             </div>
             <div class="modal-body">
                 <label>Project Name</label>
@@ -397,7 +399,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="AG.closeAddAgent()">Cancel</button>
-                <button class="btn btn-primary" onclick="AG.addAgent()">Add Project</button>
+                <button class="btn btn-primary" id="addAgentSubmitBtn" onclick="AG.addAgent()">Add Project</button>
             </div>
         </div>
     </div>
@@ -455,7 +457,7 @@
     <!-- Cascade styles injected here -->
     <style id="cascadeStyle"></style>
 
-    <script src="/js/app.js?v=13"></script>
+    <script src="/js/app.js?v=14"></script>
 </body>
 
 </html>

@@ -27,6 +27,8 @@
     let renameTargetId = null;
     let removeTargetId = null;
     let pendingAgents = JSON.parse(localStorage.getItem('ag-pending-agents') || '[]'); // { id, name, host, port, color }
+    let editingAgent = null;   // host:port key when editing, null when adding
+    let activityLog = JSON.parse(localStorage.getItem('ag-activity-log') || '[]'); // { cascadeId, type, text, time }
     const sessionStart = Date.now();
 
     const $ = id => document.getElementById(id);
@@ -148,7 +150,8 @@
 
             if (isOffline) {
                 const folderDisplay = c.folder ? `<div class="fleet-preview" title="${escHtml(c.folder)}">📁 ${escHtml(shortPath(c.folder))}</div>` : '';
-                return `<div class="fleet-card ${isPinned ? 'pinned' : ''} offline">
+                return `<div class="fleet-card ${isPinned ? 'pinned' : ''} offline"
+                    onclick="window.AG.showEditAgent('${c.host}',${c.port})">
                     ${color ? `<div class="fleet-card-color" style="background:${color}"></div>` : ''}
                     <div class="fleet-dot offline"></div>
                     <div class="fleet-info">
@@ -300,10 +303,12 @@
                             <div class="chat-approval-time">${ago}</div>
                         </div>
                     </div>
+                    <div class="chat-approval-screenshot" id="chatApprovalScreenshot-${id}"></div>
                     <div class="chat-approval-actions">
                         <button class="chat-approval-btn accept" onclick="window.AG.acceptConfirmation()">✅ Accept</button>
                         <button class="chat-approval-btn accept-all" onclick="window.AG.acceptAllConfirmations()">✅ All</button>
                         <button class="chat-approval-btn deny" onclick="window.AG.denyConfirmation()">❌ Deny</button>
+                        <button class="chat-approval-btn preview-btn" onclick="window.AG.loadApprovalScreenshot('${id}')">📸</button>
                     </div>
                 </div>`;
             }
@@ -411,6 +416,7 @@
             tasksCompleted++;
             const name = title || shortTitle((cascades.find(c => c.id === cascadeId) || {}).title) || 'Antigravity';
             showToast(`✅ ${name} — Task complete`);
+            logActivity(cascadeId, 'complete', `${name} finished task`);
             playSound();
             if (notificationsEnabled && document.hidden) {
                 new Notification('AG Mission Control', { body: `✅ ${name} — Task complete`, tag: 'ag-' + cascadeId });
@@ -494,6 +500,7 @@
         try {
             await fetch(`/api/v1/instances/${currentCascadeId}/approve`, { method: 'POST' });
             logApproval(currentCascadeId, 'accepted', approvalText);
+            logActivity(currentCascadeId, 'accept', approvalText.substring(0, 80));
             delete approvalMap[currentCascadeId];
             const banner = $('approvalBanner');
             if (banner) banner.style.display = 'none';
@@ -528,6 +535,7 @@
         try {
             await fetch(`/api/v1/instances/${currentCascadeId}/deny`, { method: 'POST' });
             logApproval(currentCascadeId, 'denied', approvalText);
+            logActivity(currentCascadeId, 'deny', approvalText.substring(0, 80));
             delete approvalMap[currentCascadeId];
             const banner = $('approvalBanner');
             if (banner) banner.style.display = 'none';
@@ -628,6 +636,7 @@
                 input.style.height = 'auto';
                 updateCharCount();
                 showToast('✅ Sent!');
+                logActivity(currentCascadeId, 'send', text.substring(0, 80));
             } else if (data.queued) {
                 showToast(`📋 Queued (position ${data.position || '?'})`);
             } else {
@@ -880,14 +889,51 @@
         } catch { showToast('❌ Stop failed'); }
     }
 
-    // ── Add Agent Modal ────────────────────────────
+    // ── Add/Edit Agent Modal ────────────────────────
     function showAddAgent() {
+        editingAgent = null;
         const modal = $('addAgentModal');
         if (modal) modal.classList.add('open');
+        // Reset to add mode
+        const title = $('addAgentTitle');
+        const subtitle = $('addAgentSubtitle');
+        const submitBtn = $('addAgentSubmitBtn');
+        if (title) title.textContent = 'Add Agent';
+        if (subtitle) subtitle.textContent = 'Register a project \u2014 it will connect when Antigravity starts';
+        if (submitBtn) submitBtn.textContent = 'Add Project';
         selectedColor = '#7c5cfc';
         $$('.color-dot').forEach(d => d.classList.toggle('selected', d.dataset.color === selectedColor));
+        // Clear form
+        if ($('agentName')) $('agentName').value = '';
+        if ($('agentFolder')) $('agentFolder').value = '';
+        if ($('agentHost')) $('agentHost').value = 'localhost';
+        if ($('agentPort')) $('agentPort').value = '9001';
     }
+
+    function showEditAgent(host, port) {
+        const agent = pendingAgents.find(p => p.host === host && p.port === port);
+        if (!agent) return showAddAgent();
+        editingAgent = `${host}:${port}`;
+        const modal = $('addAgentModal');
+        if (modal) modal.classList.add('open');
+        // Edit mode labels
+        const title = $('addAgentTitle');
+        const subtitle = $('addAgentSubtitle');
+        const submitBtn = $('addAgentSubmitBtn');
+        if (title) title.textContent = '\u270f\ufe0f Edit Agent';
+        if (subtitle) subtitle.textContent = `Editing ${agent.name || agent.host + ':' + agent.port}`;
+        if (submitBtn) submitBtn.textContent = 'Save Changes';
+        // Pre-fill form
+        if ($('agentName')) $('agentName').value = agent.name || '';
+        if ($('agentFolder')) $('agentFolder').value = agent.folder || '';
+        if ($('agentHost')) $('agentHost').value = agent.host || 'localhost';
+        if ($('agentPort')) $('agentPort').value = agent.port || '9001';
+        selectedColor = agent.color || '#7c5cfc';
+        $$('.color-dot').forEach(d => d.classList.toggle('selected', d.dataset.color === selectedColor));
+    }
+
     function closeAddAgent() {
+        editingAgent = null;
         const modal = $('addAgentModal');
         if (modal) modal.classList.remove('open');
     }
@@ -900,24 +946,37 @@
         const folder = $('agentFolder')?.value?.trim() || '';
         const host = $('agentHost')?.value?.trim() || 'localhost';
         const port = parseInt($('agentPort')?.value) || 9001;
+        const color = selectedColor !== '#7c5cfc' ? selectedColor : '';
+
+        // If editing, remove the old entry first
+        if (editingAgent) {
+            const [oldHost, oldPort] = editingAgent.split(':');
+            pendingAgents = pendingAgents.filter(p => !(p.host === oldHost && p.port === parseInt(oldPort)));
+            deleteProjectFromServer(oldHost, parseInt(oldPort));
+            logActivity(null, 'edit', `Edited project ${name || host + ':' + port}`);
+        }
+
         closeAddAgent();
 
-        // Immediately add as pending agent (shows in fleet even if offline)
+        // Upsert pending agent
         const pendingId = `pending-${host}-${port}`;
-        if (!pendingAgents.find(p => p.host === host && p.port === port)) {
-            pendingAgents.push({
-                id: pendingId,
-                title: name || `${host}:${port}`,
-                name: name,
-                folder: folder,
-                host: host,
-                port: port,
-                color: selectedColor !== '#7c5cfc' ? selectedColor : ''
-            });
-            localStorage.setItem('ag-pending-agents', JSON.stringify(pendingAgents));
-            if (name) { agentNicknames[pendingId] = name; localStorage.setItem('ag-nicknames', JSON.stringify(agentNicknames)); }
-            saveProjectToServer({ name, host, port, folder, color: selectedColor !== '#7c5cfc' ? selectedColor : '' });
-            renderFleet();
+        pendingAgents = pendingAgents.filter(p => !(p.host === host && p.port === port));
+        pendingAgents.push({
+            id: pendingId,
+            title: name || `${host}:${port}`,
+            name: name,
+            folder: folder,
+            host: host,
+            port: port,
+            color: color
+        });
+        localStorage.setItem('ag-pending-agents', JSON.stringify(pendingAgents));
+        if (name) { agentNicknames[pendingId] = name; localStorage.setItem('ag-nicknames', JSON.stringify(agentNicknames)); }
+        saveProjectToServer({ name, host, port, folder, color });
+        renderFleet();
+
+        if (!editingAgent) {
+            logActivity(null, 'add', `Added project ${name || host + ':' + port}`);
         }
 
         // Tell backend to scan + auto-launch
@@ -932,16 +991,16 @@
                 if (data.launched) {
                     showToast(`🚀 Launching ${name || 'Antigravity'} on port ${port}...`);
                 } else if (folder) {
-                    showToast(`✅ Project added — launch Antigravity manually on port ${port}`);
+                    showToast(`✅ Project ${editingAgent ? 'updated' : 'added'} — launch Antigravity manually on port ${port}`);
                 } else {
-                    showToast(`✅ Added — scanning port ${port}`);
+                    showToast(`✅ ${editingAgent ? 'Updated' : 'Added'} — scanning port ${port}`);
                 }
                 const saved = JSON.parse(localStorage.getItem('ag-extra-ports') || '[]');
                 if (!saved.find(s => s.host === host && s.port === port)) {
                     saved.push({ host, port, name, folder });
                     localStorage.setItem('ag-extra-ports', JSON.stringify(saved));
                 }
-                if (selectedColor !== '#7c5cfc') {
+                if (color) {
                     const pendingColors = JSON.parse(localStorage.getItem('ag-pending-colors') || '{}');
                     pendingColors[`${host}:${port}`] = selectedColor;
                     localStorage.setItem('ag-pending-colors', JSON.stringify(pendingColors));
@@ -959,6 +1018,43 @@
         if ($('agentName')) $('agentName').value = '';
         if ($('agentFolder')) $('agentFolder').value = '';
         if ($('agentPort')) $('agentPort').value = '9001';
+    }
+
+    // ── Approval Screenshot in Chat ─────────────────
+    async function loadApprovalScreenshot(cascadeId) {
+        const container = $(`chatApprovalScreenshot-${cascadeId}`);
+        if (!container) return;
+        if (container.innerHTML) { container.innerHTML = ''; return; } // toggle
+        container.innerHTML = '<span style="color:var(--text-muted);font-size:11px">📷 Loading...</span>';
+        try {
+            const res = await fetch(`/screenshot/${cascadeId}`);
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                container.innerHTML = `<img src="${url}" alt="Agent screenshot" style="width:100%;border-radius:8px;margin-top:8px" />`;
+            } else {
+                container.innerHTML = '<span style="color:var(--text-muted);font-size:11px">❌ No screenshot available</span>';
+            }
+        } catch {
+            container.innerHTML = '<span style="color:var(--text-muted);font-size:11px">❌ Screenshot failed</span>';
+        }
+    }
+
+    // ── Activity Log ────────────────────────────────
+    function logActivity(cascadeId, type, text) {
+        activityLog.unshift({
+            cascadeId: cascadeId || 'system',
+            type, // 'add', 'edit', 'remove', 'send', 'complete', 'approval', 'accept', 'deny', 'error'
+            text,
+            time: new Date().toISOString()
+        });
+        if (activityLog.length > 100) activityLog = activityLog.slice(0, 100);
+        localStorage.setItem('ag-activity-log', JSON.stringify(activityLog));
+    }
+
+    function getActivityLog(cascadeId) {
+        if (!cascadeId) return activityLog;
+        return activityLog.filter(e => e.cascadeId === cascadeId || e.cascadeId === 'system');
     }
 
     // ── Launch / Remove Pending Agents ────────────────
@@ -989,6 +1085,7 @@
         const filtered = saved.filter(s => !(s.host === host && s.port === port));
         localStorage.setItem('ag-extra-ports', JSON.stringify(filtered));
         deleteProjectFromServer(host, port);
+        logActivity(null, 'remove', `Removed ${host}:${port}`);
         renderFleet();
         showToast(`🗑️ Removed ${host}:${port}`);
     }
@@ -1451,11 +1548,13 @@
         window.AG = {
             selectAgent, sendMessage, toggleTheme, takeScreenshot, stopAgent,
             showAddAgent, closeAddAgent, addAgent, launchAgent, removePending,
+            showEditAgent,
             toggleAgentSettings, switchNav, toggleSidebar,
             toggleAutoAccept, toggleAgentAutoAccept,
             refreshHealth, triggerCron, toggleCronJob,
             acceptConfirmation, denyConfirmation, acceptAllConfirmations,
             toggleApprovalPreview, captureAgentPreview, quickPrompt,
+            loadApprovalScreenshot,
             filterFleet, bulkScan, pickColor,
             showCtxMenu, ctxRename, ctxPin, ctxRescan, ctxScreenshot, ctxRemove,
             closeRename, saveRename, closeRemove, confirmRemove,

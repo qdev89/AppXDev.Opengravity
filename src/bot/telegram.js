@@ -70,10 +70,22 @@ export class TelegramBot {
             // Fallback: direct CDP
             const cascade = this._getTargetCascade();
             if (!cascade) {
-                await ctx.reply('❌ No Antigravity connection');
+                // If multiple cascades available, prompt to select
+                const list = this.cdp.getCascadeList();
+                if (list.length > 1) {
+                    const keyboard = new InlineKeyboard();
+                    for (const c of list.slice(0, 10)) {
+                        const name = this._shortTitle(c.title);
+                        keyboard.text(name, `select:${c.id}`).row();
+                    }
+                    await ctx.reply('📁 Multiple projects available. Select one first:', { reply_markup: keyboard });
+                } else {
+                    await ctx.reply('❌ No Antigravity connection');
+                }
                 return;
             }
-            await ctx.reply(`📤 Sending to ${cascade.metadata.chatTitle}...`);
+            const cascadeName = this._shortTitle(cascade.metadata.chatTitle);
+            await ctx.reply(`📤 Sending to ${cascadeName}...`);
             const result = await this.cdp.injectMessage(cascade.cdp, text);
             if (result.ok) {
                 await ctx.reply('✅ Message sent!');

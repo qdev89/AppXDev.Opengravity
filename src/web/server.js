@@ -117,6 +117,17 @@ export function createWebServer(cdpManager, responseMonitor, opts = {}) {
             projects.push(project);
         }
         cfg.get().projects = projects;
+        // Auto-sync: ensure port is in cdpPorts for discovery
+        const cdpPorts = cfg.val('cdpPorts', []);
+        if (port && !cdpPorts.includes(port)) {
+            cdpPorts.push(port);
+            cdpPorts.sort((a, b) => a - b);
+            cfg.get().cdpPorts = cdpPorts;
+            // Also tell the CDP manager to start scanning this port
+            if (cdpManager && typeof cdpManager.addPort === 'function') {
+                cdpManager.addPort(host || 'localhost', port);
+            }
+        }
         cfg.save();
         res.json({ ok: true, project });
     });
