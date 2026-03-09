@@ -103,8 +103,10 @@ export class Launcher {
     /**
      * Prepare user-data-dir for an isolated instance.
      * - Clears stale Electron lock files so we don't get code 9 failures.
-     * - Copies settings.json from the main profile on first launch.
-     * - Ensures onboarding is skipped by injecting the right flags.
+     * - Copies settings, globalStorage, and key state from main Antigravity profile.
+     * - The globalStorage/storage.json contains onboarding completion flags
+     *   (e.g. unifiedStateSync.hasOnboardingMigrated) that prevent the
+     *   "Welcome to Antigravity" wizard from appearing.
      */
     _prepareProfile(port) {
         const home = process.env.USERPROFILE || process.env.HOME || '';
@@ -117,65 +119,81 @@ export class Launcher {
             try { rmSync(lockPath, { force: true }); } catch { }
         }
 
-        // ── Bootstrap settings from main Antigravity profile ──
+        // ── Bootstrap from main Antigravity profile ──
+        const mainProfile = findMainProfile();
+        if (!mainProfile) {
+            log.warn('Could not locate main Antigravity profile — isolated instance may show onboarding');
+            return profileDir;
+        }
+
         const profileUserDir = join(profileDir, 'User');
         mkdirSync(profileUserDir, { recursive: true });
-        const isolatedSettingsPath = join(profileUserDir, 'settings.json');
 
-        if (!existsSync(isolatedSettingsPath)) {
-            // First launch: copy settings from main profile
-            const mainProfile = findMainProfile();
-            if (mainProfile) {
-                const mainSettingsPath = join(mainProfile, 'settings.json');
-                if (existsSync(mainSettingsPath)) {
-                    try {
-                        copyFileSync(mainSettingsPath, isolatedSettingsPath);
-                        log.info(`Copied settings.json from main profile to port-${port}`);
-                    } catch (err) {
-                        log.warn(`Failed to copy settings.json: ${err.message}`);
-                    }
-                }
-
-                // Also copy keybindings if available
-                const mainKeybindingsPath = join(mainProfile, 'keybindings.json');
-                const isolatedKeybindingsPath = join(profileUserDir, 'keybindings.json');
-                if (existsSync(mainKeybindingsPath) && !existsSync(isolatedKeybindingsPath)) {
-                    try {
-                        copyFileSync(mainKeybindingsPath, isolatedKeybindingsPath);
-                        log.info(`Copied keybindings.json from main profile to port-${port}`);
-                    } catch { }
-                }
-
-                // Copy snippets directory
-                const mainSnippetsDir = join(mainProfile, 'snippets');
-                const isolatedSnippetsDir = join(profileUserDir, 'snippets');
-                if (existsSync(mainSnippetsDir) && !existsSync(isolatedSnippetsDir)) {
-                    try {
-                        mkdirSync(isolatedSnippetsDir, { recursive: true });
-                        for (const f of readdirSync(mainSnippetsDir)) {
-                            copyFileSync(join(mainSnippetsDir, f), join(isolatedSnippetsDir, f));
-                        }
-                        log.info(`Copied snippets from main profile to port-${port}`);
-                    } catch { }
+        // Files to copy from User/ directory
+        const userFiles = ['settings.json', 'keybindings.json'];
+        for (const file of userFiles) {
+            const src = join(mainProfile, file);
+            const dst = join(profileUserDir, file);
+            if (existsSync(src) && !existsSync(dst)) {
+                try {
+                    copyFileSync(src, dst);
+                    log.info(`Bootstrapped ${file} from main profile → port-${port}`);
+                } catch (err) {
+                    log.warn(`Failed to copy ${file}: ${err.message}`);
                 }
             }
         }
 
-        // ── Ensure onboarding-skip flags are always set ──
+        // Copy snippets directory
+        const mainSnippetsDir = join(mainProfile, 'snippets');
+        const isoSnippetsDir = join(profileUserDir, 'snippets');
+        if (existsSync(mainSnippetsDir) && !existsSync(isoSnippetsDir)) {
+            try {
+                mkdirSync(isoSnippetsDir, { recursive: true });
+                for (const f of readdirSync(mainSnippetsDir)) {
+                    copyFileSync(join(mainSnippetsDir, f), join(isoSnippetsDir, f));
+                }
+            } catch { }
+        }
+
+        // ── CRITICAL: Copy globalStorage (contains onboarding state) ──
+        // The key file is globalStorage/storage.json which contains:
+        //   - unifiedStateSync.hasOnboardingMigrated
+        //   - antigravityUnifiedStateSync.seenNuxOneTimeMigration
+        //   - antigravityUnifiedStateSync.agentPreferences.*
+        //   - antigravityUnifiedStateSync.modelPreferences.*
+        // Without this, the "Welcome to Antigravity" wizard appears every launch.
+        const mainGlobalStorage = join(mainProfile, 'globalStorage');
+        const isoGlobalStorage = join(profileUserDir, 'globalStorage');
+        mkdirSync(isoGlobalStorage, { recursive: true });
+
+        const globalStorageFiles = ['storage.json', 'state.vscdb', 'state.vscdb.backup'];
+        for (const file of globalStorageFiles) {
+            const src = join(mainGlobalStorage, file);
+            const dst = join(isoGlobalStorage, file);
+            if (existsSync(src) && !existsSync(dst)) {
+                try {
+                    copyFileSync(src, dst);
+                    log.info(`Bootstrapped globalStorage/${file} → port-${port}`);
+                } catch (err) {
+                    log.warn(`Failed to copy globalStorage/${file}: ${err.message}`);
+                }
+            }
+        }
+
+        // ── Ensure settings have onboarding-skip flags ──
+        const isolatedSettingsPath = join(profileUserDir, 'settings.json');
         try {
             let settings = {};
             if (existsSync(isolatedSettingsPath)) {
                 settings = JSON.parse(readFileSync(isolatedSettingsPath, 'utf-8'));
             }
             let modified = false;
-
-            // Skip welcome/onboarding walkthrough
             const skipFlags = {
                 'workbench.welcome.enabled': false,
                 'workbench.startupEditor': 'none',
                 'workbench.tips.enabled': false,
                 'update.showReleaseNotes': false,
-                'telemetry.telemetryLevel': 'off',
             };
             for (const [key, val] of Object.entries(skipFlags)) {
                 if (settings[key] === undefined) {
@@ -183,14 +201,10 @@ export class Launcher {
                     modified = true;
                 }
             }
-
             if (modified) {
                 writeFileSync(isolatedSettingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-                log.info(`Injected onboarding-skip settings for port-${port}`);
             }
-        } catch (err) {
-            log.warn(`Failed to patch onboarding settings: ${err.message}`);
-        }
+        } catch { }
 
         return profileDir;
     }
