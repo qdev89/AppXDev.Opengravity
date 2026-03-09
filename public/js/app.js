@@ -29,7 +29,23 @@
     let pendingAgents = JSON.parse(localStorage.getItem('ag-pending-agents') || '[]'); // { id, name, host, port, color }
     let editingAgent = null;   // host:port key when editing, null when adding
     let activityLog = JSON.parse(localStorage.getItem('ag-activity-log') || '[]'); // { cascadeId, type, text, time }
+    let agentRoles = JSON.parse(localStorage.getItem('ag-roles') || '{}'); // cascadeId/pendingId → role key
+    let agentTokens = JSON.parse(localStorage.getItem('ag-tokens') || '{}'); // cascadeId → { tokens, cost }
     const sessionStart = Date.now();
+
+    // Role badge definitions (CrewAI-inspired specialization)
+    const ROLES = {
+        frontend:   { icon: '🎨', label: 'Frontend',  color: '#60a5fa' },
+        backend:    { icon: '⚙️', label: 'Backend',   color: '#f59e0b' },
+        fullstack:  { icon: '🔄', label: 'Full-Stack', color: '#a78bfa' },
+        devops:     { icon: '🚀', label: 'DevOps',    color: '#34d399' },
+        researcher: { icon: '🔬', label: 'Researcher', color: '#06b6d4' },
+        designer:   { icon: '🎯', label: 'Designer',  color: '#fb923c' },
+        qa:         { icon: '🧪', label: 'QA',        color: '#f87171' },
+        pm:         { icon: '📋', label: 'PM',        color: '#fbbf24' },
+        data:       { icon: '📊', label: 'Data',      color: '#2dd4bf' },
+        security:   { icon: '🔒', label: 'Security',  color: '#ef4444' }
+    };
 
     const $ = id => document.getElementById(id);
     const $$ = sel => document.querySelectorAll(sel);
@@ -155,7 +171,7 @@
                     ${color ? `<div class="fleet-card-color" style="background:${color}"></div>` : ''}
                     <div class="fleet-dot offline"></div>
                     <div class="fleet-info">
-                        <div class="fleet-name">${escHtml(name)}</div>
+                        <div class="fleet-name">${escHtml(name)} ${getRoleBadge(isOffline ? `pending-${c.host}-${c.port}` : c.id)}</div>
                         <div class="fleet-status">${status.icon} ${status.text}</div>
                         <div class="fleet-preview">${c.host}:${c.port}</div>
                         ${folderDisplay}
@@ -173,7 +189,7 @@
                 ${color ? `<div class="fleet-card-color" style="background:${color}"></div>` : ''}
                 <div class="fleet-dot ${status.cls}"></div>
                 <div class="fleet-info">
-                    <div class="fleet-name">${escHtml(name)} ${statsHtml}</div>
+                    <div class="fleet-name">${escHtml(name)} ${statsHtml} ${getRoleBadge(c.id)}</div>
                     <div class="fleet-status">${status.icon} ${status.text}</div>
                     <div class="fleet-preview">${c.window || 'Port ' + (c.port || '9000')}</div>
                 </div>
@@ -185,6 +201,13 @@
 
     function displayName(c) {
         return agentNicknames[c.id] || shortTitle(c.title);
+    }
+
+    function getRoleBadge(agentId) {
+        const role = agentRoles[agentId];
+        if (!role || !ROLES[role]) return '';
+        const r = ROLES[role];
+        return `<span class="role-badge" style="--role-color:${r.color}">${r.icon} ${r.label}</span>`;
     }
 
     function updateFleetSummary() {
@@ -637,6 +660,8 @@
                 updateCharCount();
                 showToast('✅ Sent!');
                 logActivity(currentCascadeId, 'send', text.substring(0, 80));
+                // Track token cost (ClawWork-inspired economics)
+                trackTokenCost(currentCascadeId, text);
             } else if (data.queued) {
                 showToast(`📋 Queued (position ${data.position || '?'})`);
             } else {
@@ -648,6 +673,71 @@
         }
         if (btn) btn.disabled = false;
         isSending = false;
+    }
+
+    // ── Token Cost Tracking (ClawWork-inspired) ────
+    function estimateTokens(text) {
+        // Rule of thumb: ~4 chars per token for English
+        return Math.ceil(text.length / 4);
+    }
+
+    function trackTokenCost(cascadeId, text) {
+        const tokens = estimateTokens(text);
+        // Assume ~$0.003 per 1K input tokens (Claude-like pricing)
+        const costPer1K = 0.003;
+        const cost = (tokens / 1000) * costPer1K;
+        if (!agentTokens[cascadeId]) agentTokens[cascadeId] = { tokens: 0, cost: 0 };
+        agentTokens[cascadeId].tokens += tokens;
+        agentTokens[cascadeId].cost += cost;
+        localStorage.setItem('ag-tokens', JSON.stringify(agentTokens));
+        updateAgentSettings(currentCascadeId);
+    }
+
+    // ── Broadcast Prompt ─────────────────────────────
+    async function broadcastPrompt() {
+        const input = $('messageInput');
+        if (!input) { showToast('❌ Input not found'); return; }
+        const text = input.value.trim();
+        if (!text) { showToast('❌ Type a prompt first'); return; }
+
+        const onlineAgents = cascades.filter(c => getPhase(c.id) !== 'offline');
+        if (onlineAgents.length === 0) { showToast('❌ No online agents'); return; }
+
+        showToast(`📡 Broadcasting to ${onlineAgents.length} agent(s)...`);
+
+        let sent = 0;
+        let failed = 0;
+        for (const c of onlineAgents) {
+            try {
+                const res = await fetch('/api/v1/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: text, target: c.id, source: 'dashboard-broadcast' })
+                });
+                const data = await res.json();
+                if (data.ok || data.queued) {
+                    sent++;
+                    chatMessages.push({ type: 'sent', text: `[📡 Broadcast] ${text}`, target: c.id, time: Date.now() });
+                    const projectName = shortTitle(c.title) || 'Unknown';
+                    addToHistory(`[📡 Broadcast] ${text}`, c.id, projectName);
+                    if (!perAgentStats[c.id]) perAgentStats[c.id] = { sent: 0, completed: 0 };
+                    perAgentStats[c.id].sent++;
+                    trackTokenCost(c.id, text);
+                    logActivity(c.id, 'send', `[Broadcast] ${text.substring(0, 60)}`);
+                } else {
+                    failed++;
+                }
+            } catch {
+                failed++;
+            }
+        }
+
+        saveAgentStats();
+        input.value = '';
+        input.style.height = 'auto';
+        updateCharCount();
+        showToast(`📡 Broadcast: ${sent} sent, ${failed} failed`);
+        renderFleet();
     }
 
     // ── Task History ──────────────────────────────
@@ -741,6 +831,11 @@
         const upMin = Math.floor(upMs / 60000);
         const upHr = Math.floor(upMin / 60);
         setVal('as-uptime', upHr > 0 ? `${upHr}h ${upMin % 60}m` : `${upMin}m`);
+
+        // Token cost (ClawWork-inspired economics)
+        const tk = agentTokens[cascadeId] || { tokens: 0, cost: 0 };
+        setVal('as-tokens', tk.tokens > 1000 ? `${(tk.tokens / 1000).toFixed(1)}K` : tk.tokens);
+        setVal('as-cost', `$${tk.cost.toFixed(4)}`);
 
         // Per-agent auto-accept toggle state
         const aaToggle = $('as-autoaccept');
@@ -908,6 +1003,7 @@
         if ($('agentFolder')) $('agentFolder').value = '';
         if ($('agentHost')) $('agentHost').value = 'localhost';
         if ($('agentPort')) $('agentPort').value = '9001';
+        if ($('agentRole')) $('agentRole').value = '';
     }
 
     function showEditAgent(host, port) {
@@ -928,6 +1024,7 @@
         if ($('agentFolder')) $('agentFolder').value = agent.folder || '';
         if ($('agentHost')) $('agentHost').value = agent.host || 'localhost';
         if ($('agentPort')) $('agentPort').value = agent.port || '9001';
+        if ($('agentRole')) $('agentRole').value = agentRoles[`pending-${host}-${port}`] || '';
         selectedColor = agent.color || '#7c5cfc';
         $$('.color-dot').forEach(d => d.classList.toggle('selected', d.dataset.color === selectedColor));
     }
@@ -947,6 +1044,7 @@
         const host = $('agentHost')?.value?.trim() || 'localhost';
         const port = parseInt($('agentPort')?.value) || 9001;
         const color = selectedColor !== '#7c5cfc' ? selectedColor : '';
+        const role = $('agentRole')?.value || '';
 
         // If editing, remove the old entry first
         if (editingAgent) {
@@ -972,6 +1070,13 @@
         });
         localStorage.setItem('ag-pending-agents', JSON.stringify(pendingAgents));
         if (name) { agentNicknames[pendingId] = name; localStorage.setItem('ag-nicknames', JSON.stringify(agentNicknames)); }
+        // Save role
+        if (role) {
+            agentRoles[pendingId] = role;
+        } else {
+            delete agentRoles[pendingId];
+        }
+        localStorage.setItem('ag-roles', JSON.stringify(agentRoles));
         saveProjectToServer({ name, host, port, folder, color });
         renderFleet();
 
@@ -1658,6 +1763,7 @@
             toggleApprovalPreview, captureAgentPreview, quickPrompt,
             loadApprovalScreenshot,
             renderActivityLog, clearActivityLog,
+            broadcastPrompt,
             filterFleet, bulkScan, pickColor,
             showCtxMenu, ctxRename, ctxPin, ctxRescan, ctxScreenshot, ctxRemove,
             closeRename, saveRename, closeRemove, confirmRemove,

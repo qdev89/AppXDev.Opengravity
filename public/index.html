@@ -18,7 +18,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/css/styles.css?v=15">
+    <link rel="stylesheet" href="/css/styles.css?v=16">
 </head>
 
 <body>
@@ -308,6 +308,7 @@
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.AG?.sendMessage()}"></textarea>
                 <span class="char-count" id="charCount">0</span>
             </div>
+            <button class="send-btn broadcast-btn" id="broadcastBtn" title="Broadcast to All" onclick="window.AG?.broadcastPrompt()">📡</button>
             <button class="send-btn" id="sendBtn" title="Send" onclick="window.AG?.sendMessage()">▶</button>
         </div>
     </main>
@@ -384,6 +385,10 @@
                 </div>
                 <div class="panel-row"><span>Session uptime</span><span class="panel-value" id="as-uptime">–</span>
                 </div>
+                <div class="panel-row"><span>Est. tokens used</span><span class="panel-value" id="as-tokens">0</span>
+                </div>
+                <div class="panel-row"><span>Est. cost</span><span class="panel-value" id="as-cost">$0.00</span>
+                </div>
             </div>
         </div>
     </aside>
@@ -398,6 +403,21 @@
             <div class="modal-body">
                 <label>Project Name</label>
                 <input type="text" id="agentName" placeholder="e.g. POSKit, DevOps, Blog">
+                <label>Agent Role</label>
+                <select id="agentRole" class="activity-filter" style="width:100%;padding:8px 12px;font-size:13px;margin-bottom:4px">
+                    <option value="">None (General)</option>
+                    <option value="frontend">🎨 Frontend Dev</option>
+                    <option value="backend">⚙️ Backend Dev</option>
+                    <option value="fullstack">🔄 Full-Stack</option>
+                    <option value="devops">🚀 DevOps</option>
+                    <option value="researcher">🔬 Researcher</option>
+                    <option value="designer">🎯 Designer</option>
+                    <option value="qa">🧪 QA Tester</option>
+                    <option value="pm">📋 Project Manager</option>
+                    <option value="data">📊 Data Engineer</option>
+                    <option value="security">🔒 Security</option>
+                </select>
+                <div class="modal-hint">Assign a specialization role (shown as badge on fleet card)</div>
                 <label>Project Folder</label>
                 <input type="text" id="agentFolder" placeholder="C:\Projects\my-app or ~/projects/my-app">
                 <div class="modal-hint">The folder Antigravity will open for this project</div>
@@ -490,7 +510,7 @@
     <!-- Cascade styles injected here -->
     <style id="cascadeStyle"></style>
 
-    <script src="/js/app.js?v=15"></script>
+    <script src="/js/app.js?v=16"></script>
 </body>
 
 </html>
