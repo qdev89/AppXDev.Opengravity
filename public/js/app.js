@@ -339,8 +339,32 @@
         } catch (e) { console.error(e); }
     }
 
-    let scrollLocked = true; // auto-scroll ON by default
+    let scrollLocked = false; // auto-scroll OFF by default — user controls scroll
     let chatMessages = []; // { type:'sent'|'received', text, time }
+    let lastChatHtml = ''; // Track last rendered HTML to avoid unnecessary DOM updates
+    let userScrolledUp = false; // Track if user manually scrolled up
+
+    // Smart scroll detection: if user is near bottom, auto-scroll; if they scrolled up, don't
+    function isNearBottom(el) {
+        if (!el) return true;
+        const threshold = 150; // px from bottom to consider "at bottom"
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) < threshold;
+    }
+
+    // Set up scroll listener on chat area
+    function initChatScrollListener() {
+        const chatArea = $('chatArea');
+        if (!chatArea || chatArea._scrollListenerAttached) return;
+        chatArea.addEventListener('scroll', () => {
+            userScrolledUp = !isNearBottom(chatArea);
+            // Update the floating "new content" indicator
+            const indicator = $('newContentIndicator');
+            if (indicator && !userScrolledUp) {
+                indicator.style.display = 'none';
+            }
+        }, { passive: true });
+        chatArea._scrollListenerAttached = true;
+    }
 
     async function updateChat(id) {
         try {
@@ -351,10 +375,11 @@
             const chatContent = $('chatContent');
             if (!chatArea || !chatContent) return;
 
+            initChatScrollListener();
+
             // Build chat content: sent bubbles + mirrored IDE
-            let bubblesHtml = '';
             const sentForAgent = chatMessages.filter(m => m.type === 'sent' && m.target === id);
-            bubblesHtml = sentForAgent.map(m => {
+            const bubblesHtml = sentForAgent.map(m => {
                 const time = new Date(m.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 return `<div class="chat-sent-msg">
                     <div class="chat-sent-bubble">
@@ -388,16 +413,48 @@
                 </div>`;
             }
 
-            chatContent.innerHTML = bubblesHtml + `<div class="chat-mirror">${data.html}</div>` + approvalCardHtml;
+            const newHtml = bubblesHtml + `<div class="chat-mirror">${data.html}</div>` + approvalCardHtml;
+
+            // ── DOM Diffing: Only update if content actually changed ──
+            if (newHtml !== lastChatHtml) {
+                const wasAtBottom = isNearBottom(chatArea);
+                chatContent.innerHTML = newHtml;
+                lastChatHtml = newHtml;
+
+                // Smart auto-scroll logic:
+                // 1. If user was at the bottom (or explicitly has scroll lock ON), scroll to bottom
+                // 2. If user scrolled up to read, DON'T scroll — show "new content" indicator instead
+                if (scrollLocked || (wasAtBottom && !userScrolledUp)) {
+                    requestAnimationFrame(() => {
+                        chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+                    });
+                } else if (userScrolledUp) {
+                    // Show "new content" floating button
+                    showNewContentIndicator();
+                }
+            }
 
             // Update message count
             updateChatMsgCount(sentForAgent.length);
-
-            // Auto-scroll if not locked
-            if (scrollLocked) {
-                requestAnimationFrame(() => chatArea.scrollTop = chatArea.scrollHeight);
-            }
         } catch { }
+    }
+
+    function showNewContentIndicator() {
+        let indicator = $('newContentIndicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'newContentIndicator';
+            indicator.className = 'new-content-indicator';
+            indicator.innerHTML = '↓ New content';
+            indicator.onclick = () => {
+                scrollToBottom();
+                indicator.style.display = 'none';
+                userScrolledUp = false;
+            };
+            const chatArea = $('chatArea');
+            if (chatArea) chatArea.appendChild(indicator);
+        }
+        indicator.style.display = 'flex';
     }
 
     function updateChatMsgCount(sentCount) {
@@ -412,12 +469,21 @@
             btn.textContent = scrollLocked ? '🔒 Auto-scroll' : '🔓 Scroll free';
             btn.classList.toggle('active', scrollLocked);
         }
-        if (scrollLocked) scrollToBottom();
+        if (scrollLocked) {
+            userScrolledUp = false;
+            scrollToBottom();
+        }
     }
 
     function scrollToBottom() {
         const chatArea = $('chatArea');
-        if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+        if (chatArea) {
+            chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+            userScrolledUp = false;
+            // Hide the new content indicator
+            const indicator = $('newContentIndicator');
+            if (indicator) indicator.style.display = 'none';
+        }
     }
 
     function exportChat() {
