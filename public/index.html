@@ -18,7 +18,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/css/styles.css?v=14">
+    <link rel="stylesheet" href="/css/styles.css?v=15">
 </head>
 
 <body>
@@ -31,6 +31,7 @@
         <div class="nav-item" data-panel="cron" onclick="AG.switchNav('cron')" title="Cron Jobs">⏰</div>
         <div class="nav-item" data-panel="remotes" onclick="AG.switchNav('remotes')" title="Remotes">🌐</div>
         <div class="nav-item" data-panel="history" onclick="AG.switchNav('history')" title="History">📋</div>
+        <div class="nav-item" data-panel="activity" onclick="AG.switchNav('activity')" title="Activity Log">📊</div>
         <div class="nav-spacer"></div>
         <div class="nav-item" data-panel="settings" onclick="AG.switchNav('settings')" title="Settings">⚙️</div>
     </nav>
@@ -139,6 +140,38 @@
             <div class="sidebar-content" style="padding:12px" id="remotesPanel">
                 <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
                     🌐 Loading remote connections...
+                </p>
+            </div>
+        </div>
+
+        <!-- Activity Log Panel -->
+        <div class="sidebar-section" data-panel="activity"
+            style="display:none;flex:1;display:flex;flex-direction:column">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Activity Log</div>
+                <div style="display:flex;gap:4px">
+                    <select id="activityFilter" class="activity-filter" onchange="AG.renderActivityLog()">
+                        <option value="all">All Types</option>
+                        <option value="send">📤 Sent</option>
+                        <option value="complete">✅ Complete</option>
+                        <option value="accept">👍 Accepted</option>
+                        <option value="deny">👎 Denied</option>
+                        <option value="add">➕ Added</option>
+                        <option value="edit">✏️ Edited</option>
+                        <option value="remove">🗑️ Removed</option>
+                    </select>
+                    <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.clearActivityLog()">🗑️</button>
+                </div>
+            </div>
+            <div class="activity-stats" id="activityStats">
+                <div class="activity-stat"><span class="activity-stat-val" id="act-total">0</span>events</div>
+                <div class="activity-stat"><span class="activity-stat-val act-send" id="act-send">0</span>sent</div>
+                <div class="activity-stat"><span class="activity-stat-val act-complete" id="act-complete">0</span>done</div>
+                <div class="activity-stat"><span class="activity-stat-val act-approve" id="act-approve">0</span>approved</div>
+            </div>
+            <div class="sidebar-content" style="padding:8px 12px" id="activityList">
+                <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                    📊 Activity events will appear here as you interact with agents
                 </p>
             </div>
         </div>
@@ -457,7 +490,7 @@
     <!-- Cascade styles injected here -->
     <style id="cascadeStyle"></style>
 
-    <script src="/js/app.js?v=14"></script>
+    <script src="/js/app.js?v=15"></script>
 </body>
 
 </html>

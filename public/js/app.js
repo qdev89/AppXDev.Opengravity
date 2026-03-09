@@ -1057,6 +1057,107 @@
         return activityLog.filter(e => e.cascadeId === cascadeId || e.cascadeId === 'system');
     }
 
+    // ── Activity Log UI ────────────────────────────────
+    const activityIcons = {
+        send: '📤', complete: '✅', accept: '👍', deny: '👎',
+        add: '➕', edit: '✏️', remove: '🗑️', error: '❌',
+        approval: '⏳', launch: '🚀'
+    };
+    const activityLabels = {
+        send: 'Sent', complete: 'Completed', accept: 'Accepted', deny: 'Denied',
+        add: 'Added', edit: 'Edited', remove: 'Removed', error: 'Error',
+        approval: 'Approval', launch: 'Launched'
+    };
+    const activityColors = {
+        send: '#7c5cfc', complete: '#22c55e', accept: '#22c55e', deny: '#ef4444',
+        add: '#3b82f6', edit: '#f59e0b', remove: '#ef4444', error: '#ef4444',
+        approval: '#f59e0b', launch: '#06b6d4'
+    };
+
+    function renderActivityLog() {
+        const list = $('activityList');
+        if (!list) return;
+
+        // Update stats
+        const totalEl = $('act-total');
+        const sendEl = $('act-send');
+        const completeEl = $('act-complete');
+        const approveEl = $('act-approve');
+        if (totalEl) totalEl.textContent = activityLog.length;
+        if (sendEl) sendEl.textContent = activityLog.filter(e => e.type === 'send').length;
+        if (completeEl) completeEl.textContent = activityLog.filter(e => e.type === 'complete').length;
+        if (approveEl) approveEl.textContent = activityLog.filter(e => e.type === 'accept').length;
+
+        // Get filter
+        const filterEl = $('activityFilter');
+        const filter = filterEl ? filterEl.value : 'all';
+        let entries = filter === 'all' ? [...activityLog] : activityLog.filter(e => e.type === filter);
+
+        if (entries.length === 0) {
+            list.innerHTML = `<p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                📊 ${filter === 'all' ? 'No activity yet' : `No "${activityLabels[filter] || filter}" events`}
+            </p>`;
+            return;
+        }
+
+        // Group by date
+        const groups = {};
+        entries.forEach(e => {
+            const d = new Date(e.time);
+            const key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(e);
+        });
+
+        let html = '';
+        for (const [date, items] of Object.entries(groups)) {
+            html += `<div class="activity-date-group">
+                <div class="activity-date-label">${date}</div>`;
+            for (const e of items) {
+                const icon = activityIcons[e.type] || '📝';
+                const label = activityLabels[e.type] || e.type;
+                const color = activityColors[e.type] || '#888';
+                const time = new Date(e.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const agentName = resolveAgentName(e.cascadeId);
+                const textPreview = escHtml((e.text || '').substring(0, 60)) + ((e.text || '').length > 60 ? '…' : '');
+
+                html += `<div class="activity-item" style="--accent:${color}">
+                    <div class="activity-icon" style="background:${color}20;color:${color}">${icon}</div>
+                    <div class="activity-body">
+                        <div class="activity-header">
+                            <span class="activity-label">${label}</span>
+                            <span class="activity-time">${time}</span>
+                        </div>
+                        ${agentName !== 'System' ? `<div class="activity-agent">${escHtml(agentName)}</div>` : ''}
+                        ${textPreview ? `<div class="activity-text">${textPreview}</div>` : ''}
+                    </div>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        list.innerHTML = html;
+    }
+
+    function resolveAgentName(cascadeId) {
+        if (!cascadeId || cascadeId === 'system') return 'System';
+        // Try nickname first
+        if (agentNicknames[cascadeId]) return agentNicknames[cascadeId];
+        // Try cascade title
+        const c = cascades.find(c => c.id === cascadeId);
+        if (c) return shortTitle(c.title) || 'Agent';
+        // Pending agent by port
+        const p = pendingAgents.find(p => `${p.host}:${p.port}` === cascadeId);
+        if (p) return p.name || `${p.host}:${p.port}`;
+        return cascadeId.substring(0, 12) + '…';
+    }
+
+    function clearActivityLog() {
+        activityLog = [];
+        localStorage.removeItem('ag-activity-log');
+        renderActivityLog();
+        showToast('🗑️ Activity log cleared');
+    }
+
     // ── Launch / Remove Pending Agents ────────────────
     async function launchAgent(host, port, name, folder) {
         showToast(`🚀 Launching ${name || 'Antigravity'} on port ${port}...`);
@@ -1300,6 +1401,7 @@
         if (panel === 'health') refreshHealth();
         if (panel === 'cron') loadCron();
         if (panel === 'remotes') loadRemotes();
+        if (panel === 'activity') renderActivityLog();
         // On mobile, open sidebar when clicking nav items
         if (window.innerWidth <= 768) {
             document.querySelector('.sidebar')?.classList.add('open');
@@ -1555,6 +1657,7 @@
             acceptConfirmation, denyConfirmation, acceptAllConfirmations,
             toggleApprovalPreview, captureAgentPreview, quickPrompt,
             loadApprovalScreenshot,
+            renderActivityLog, clearActivityLog,
             filterFleet, bulkScan, pickColor,
             showCtxMenu, ctxRename, ctxPin, ctxRescan, ctxScreenshot, ctxRemove,
             closeRename, saveRename, closeRemove, confirmRemove,
