@@ -50,6 +50,44 @@
     const $ = id => document.getElementById(id);
     const $$ = sel => document.querySelectorAll(sel);
 
+    // ── Hydrate token data from existing task history ────
+    function hydrateTokensFromHistory() {
+        // If agentTokens is empty but we have task history, backfill
+        if (Object.keys(agentTokens).length === 0 && taskHistory.length > 0) {
+            taskHistory.forEach(t => {
+                if (t.cascadeId && t.message) {
+                    const tokens = estimateTokens(t.message);
+                    const costPer1K = 0.003;
+                    const cost = (tokens / 1000) * costPer1K;
+                    if (!agentTokens[t.cascadeId]) agentTokens[t.cascadeId] = { tokens: 0, cost: 0 };
+                    agentTokens[t.cascadeId].tokens += tokens;
+                    agentTokens[t.cascadeId].cost += cost;
+                }
+            });
+            if (Object.keys(agentTokens).length > 0) {
+                localStorage.setItem('ag-tokens', JSON.stringify(agentTokens));
+            }
+        }
+        // Also ensure perAgentStats has entries for all known agents
+        taskHistory.forEach(t => {
+            if (t.cascadeId && !perAgentStats[t.cascadeId]) {
+                perAgentStats[t.cascadeId] = { sent: 0, completed: 0 };
+            }
+            if (t.cascadeId && perAgentStats[t.cascadeId]) {
+                // Ensure sent count is at least the number of tasks in history
+                const historyCount = taskHistory.filter(h => h.cascadeId === t.cascadeId).length;
+                if (perAgentStats[t.cascadeId].sent < historyCount) {
+                    perAgentStats[t.cascadeId].sent = historyCount;
+                }
+                const doneCount = taskHistory.filter(h => h.cascadeId === t.cascadeId && h.status === 'completed').length;
+                if (perAgentStats[t.cascadeId].completed < doneCount) {
+                    perAgentStats[t.cascadeId].completed = doneCount;
+                }
+            }
+        });
+        saveAgentStats();
+    }
+
     // ── Theme ──────────────────────────────────────
     function initTheme() {
         const saved = localStorage.getItem('ag-theme');
@@ -238,6 +276,20 @@
         // Extract workspace/project name from Antigravity title
         const parts = title.split(' - ');
         return parts[0].replace('[Antigravity]', '').trim() || parts[0] || title;
+    }
+
+    function resolveAgentName(id) {
+        if (!id || id === 'system') return 'System';
+        if (agentNicknames[id]) return agentNicknames[id];
+        const cascade = cascades.find(c => c.id === id);
+        if (cascade) return shortTitle(cascade.title);
+        // Check task history for a project name
+        const histEntry = taskHistory.find(t => t.cascadeId === id && t.project);
+        if (histEntry) return histEntry.project;
+        // Check pending agents
+        const pending = pendingAgents.find(p => `pending-${p.host}-${p.port}` === id);
+        if (pending) return pending.name || `${pending.host}:${pending.port}`;
+        return id.substring(0, 8) + '…';
     }
 
     function shortPath(folderPath) {
@@ -738,6 +790,343 @@
         updateCharCount();
         showToast(`📡 Broadcast: ${sent} sent, ${failed} failed`);
         renderFleet();
+    }
+
+    // ── Economics Dashboard (ClawWork-inspired) ────────
+    let crewTemplates = JSON.parse(localStorage.getItem('ag-crews') || '[]');
+
+    function renderEconomics() {
+        const setVal = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+        let totalTokens = 0, totalCost = 0, agentCount = 0;
+        const agentBreakdown = [];
+        const seenIds = new Set();
+
+        // Aggregate from agentTokens
+        for (const [id, data] of Object.entries(agentTokens)) {
+            totalTokens += data.tokens || 0;
+            totalCost += data.cost || 0;
+            agentCount++;
+            seenIds.add(id);
+            const stats = perAgentStats[id] || { sent: 0, completed: 0 };
+            const name = resolveAgentName(id);
+            agentBreakdown.push({ id, name, tokens: data.tokens || 0, cost: data.cost || 0, sent: stats.sent || 0, completed: stats.completed || 0 });
+        }
+
+        // Also include agents from perAgentStats and taskHistory that aren't in agentTokens
+        const allKnown = new Set([
+            ...cascades.map(c => c.id),
+            ...Object.keys(perAgentStats),
+            ...taskHistory.map(t => t.cascadeId).filter(Boolean)
+        ]);
+        allKnown.forEach(id => {
+            if (!seenIds.has(id)) {
+                seenIds.add(id);
+                const stats = perAgentStats[id] || { sent: 0, completed: 0 };
+                // Estimate tokens from taskHistory for this agent
+                let estTokens = 0, estCost = 0;
+                taskHistory.filter(t => t.cascadeId === id).forEach(t => {
+                    if (t.message) {
+                        const tk = estimateTokens(t.message);
+                        estTokens += tk;
+                        estCost += (tk / 1000) * 0.003;
+                    }
+                });
+                if (estTokens > 0 || stats.sent > 0) {
+                    totalTokens += estTokens;
+                    totalCost += estCost;
+                    agentCount++;
+                    const name = resolveAgentName(id);
+                    agentBreakdown.push({ id, name, tokens: estTokens, cost: estCost, sent: stats.sent || 0, completed: stats.completed || 0 });
+                }
+            }
+        });
+
+        const totalAgents = Math.max(agentCount, seenIds.size);
+        const totalTasks = taskHistory.length || Object.values(perAgentStats).reduce((s, v) => s + (v.sent || 0), 0);
+        const avgCost = totalTasks > 0 ? totalCost / totalTasks : 0;
+
+        setVal('econ-tokens', totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}K` : totalTokens);
+        setVal('econ-cost', `$${totalCost.toFixed(4)}`);
+        setVal('econ-agents', totalAgents || cascades.length || pendingAgents.length);
+        setVal('econ-avg', `$${avgCost.toFixed(4)}`);
+
+        // Per-agent breakdown with bar chart
+        const list = $('econAgentsList');
+        if (!list) return;
+        const maxTokens = Math.max(...agentBreakdown.map(a => a.tokens), 1);
+
+        if (agentBreakdown.length === 0) {
+            // Show helpful summary from task history even without token data
+            const taskCount = taskHistory.length;
+            list.innerHTML = `<div class="panel-label" style="padding:8px 0 4px">Per-Agent Breakdown</div>
+                <div style="text-align:center;padding:20px;color:var(--text-muted)">
+                    <div style="font-size:28px;margin-bottom:8px">💰</div>
+                    <p style="font-size:12px;margin-bottom:4px">${taskCount > 0 ? taskCount + ' tasks in history' : 'No tasks yet'}</p>
+                    <p style="font-size:11px;opacity:0.7">Send prompts to track token costs & spending</p>
+                </div>`;
+            return;
+        }
+
+        list.innerHTML = `<div class="panel-label" style="padding:8px 0 4px">Per-Agent Breakdown</div>` +
+            agentBreakdown.sort((a, b) => b.tokens - a.tokens).map(a => {
+                const pct = (a.tokens / maxTokens * 100).toFixed(0);
+                const role = agentRoles[a.id];
+                const roleBadge = role && ROLES[role] ? `<span class="role-badge" style="--role-color:${ROLES[role].color}">${ROLES[role].icon} ${ROLES[role].label}</span>` : '';
+                return `<div class="econ-agent-row">
+                    <div class="econ-agent-name">${escHtml(a.name)} ${roleBadge}</div>
+                    <div class="econ-bar-wrap">
+                        <div class="econ-bar" style="width:${pct}%"></div>
+                    </div>
+                    <div class="econ-agent-stats">
+                        <span>${a.tokens > 1000 ? (a.tokens / 1000).toFixed(1) + 'K' : a.tokens} tok</span>
+                        <span>$${a.cost.toFixed(4)}</span>
+                        <span>${a.sent} tasks</span>
+                    </div>
+                </div>`;
+            }).join('');
+    }
+
+    // ── Agent Memory Panel (CrewAI-inspired) ──────────
+    function renderMemory() {
+        const panel = $('memoryPanel');
+        if (!panel) return;
+
+        const agents = [...cascades];
+        // Also include pending agents
+        pendingAgents.forEach(p => {
+            if (!agents.find(c => c.host === p.host && c.port === p.port)) {
+                agents.push({ id: `pending-${p.host}-${p.port}`, host: p.host, port: p.port, title: p.name || 'Pending' });
+            }
+        });
+
+        if (agents.length === 0) {
+            panel.innerHTML = `<p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                🧠 No agents registered. Add agents to see their memory.
+            </p>`;
+            return;
+        }
+
+        panel.innerHTML = agents.map(c => {
+            const name = agentNicknames[c.id] || shortTitle(c.title) || c.host;
+            const stats = perAgentStats[c.id] || { sent: 0, completed: 0 };
+            const tokens = agentTokens[c.id] || { tokens: 0, cost: 0 };
+            const phase = getPhase(c.id);
+            const role = agentRoles[c.id];
+            const roleBadge = role && ROLES[role] ? `<span class="role-badge" style="--role-color:${ROLES[role].color}">${ROLES[role].icon} ${ROLES[role].label}</span>` : '';
+
+            // Count chat messages for this agent
+            const agentMsgs = chatMessages.filter(m => m.target === c.id).length;
+
+            // Count activity log events for this agent
+            const agentActivity = activityLog.filter(a => a.cascadeId === c.id).length;
+
+            // Task history for this agent
+            const agentTasks = taskHistory.filter(t => t.cascadeId === c.id).length;
+
+            return `<div class="memory-card">
+                <div class="memory-card-header">
+                    <span class="memory-name">${escHtml(name)} ${roleBadge}</span>
+                    <span class="fleet-dot ${phase === 'offline' ? 'offline' : phase}"></span>
+                </div>
+                <div class="memory-grid">
+                    <div class="memory-stat">
+                        <div class="memory-stat-icon">💬</div>
+                        <div class="memory-stat-info">
+                            <div class="memory-stat-val">${agentMsgs}</div>
+                            <div class="memory-stat-label">Messages</div>
+                        </div>
+                    </div>
+                    <div class="memory-stat">
+                        <div class="memory-stat-icon">📋</div>
+                        <div class="memory-stat-info">
+                            <div class="memory-stat-val">${agentTasks}</div>
+                            <div class="memory-stat-label">Tasks</div>
+                        </div>
+                    </div>
+                    <div class="memory-stat">
+                        <div class="memory-stat-icon">🔤</div>
+                        <div class="memory-stat-info">
+                            <div class="memory-stat-val">${tokens.tokens > 1000 ? (tokens.tokens / 1000).toFixed(1) + 'K' : tokens.tokens}</div>
+                            <div class="memory-stat-label">Tokens</div>
+                        </div>
+                    </div>
+                    <div class="memory-stat">
+                        <div class="memory-stat-icon">📊</div>
+                        <div class="memory-stat-info">
+                            <div class="memory-stat-val">${agentActivity}</div>
+                            <div class="memory-stat-label">Activities</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="memory-context">
+                    <span>Sent: ${stats.sent}</span>
+                    <span>Done: ${stats.completed}</span>
+                    <span>Cost: $${tokens.cost.toFixed(4)}</span>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── Crew Templates (CrewAI-inspired) ──────────────
+    function renderCrews() {
+        const panel = $('crewsPanel');
+        if (!panel) return;
+
+        if (crewTemplates.length === 0) {
+            panel.innerHTML = `<div style="text-align:center;padding:30px 12px">
+                <div style="font-size:32px;margin-bottom:12px">👥</div>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+                    Crew templates let you group agents into teams for coordinated work.
+                </p>
+                <button class="add-ws-btn" onclick="AG.showCreateCrew()">＋ Create First Crew</button>
+            </div>`;
+            return;
+        }
+
+        panel.innerHTML = crewTemplates.map((crew, i) => {
+            const memberBadges = crew.members.map(m => {
+                const r = ROLES[m.role];
+                return r ? `<span class="role-badge" style="--role-color:${r.color}">${r.icon} ${r.label}</span>` : '';
+            }).join(' ');
+            return `<div class="crew-card">
+                <div class="crew-card-header">
+                    <span class="crew-name">${escHtml(crew.name)}</span>
+                    <div class="crew-actions">
+                        <button class="fleet-run-btn" onclick="AG.deployCrew(${i})" title="Deploy Crew">▶</button>
+                        <button class="fleet-remove-btn" onclick="AG.deleteCrew(${i})" title="Delete">✕</button>
+                    </div>
+                </div>
+                <div class="crew-desc">${escHtml(crew.description || '')}</div>
+                <div class="crew-members">${memberBadges || '<span style="color:var(--text-muted);font-size:11px">No members</span>'}</div>
+                <div class="crew-meta">${crew.members.length} member(s) · Created ${new Date(crew.created).toLocaleDateString()}</div>
+            </div>`;
+        }).join('');
+    }
+
+    function showCreateCrew() {
+        const name = prompt('Crew Name (e.g., "Full-Stack Team"):');
+        if (!name) return;
+        const desc = prompt('Brief description (optional):') || '';
+
+        // Build members from available roles
+        const roles = Object.entries(ROLES);
+        const memberStr = prompt(
+            `Add members by role (comma-separated):\n\nAvailable roles: ${roles.map(([k, v]) => `${v.icon} ${k}`).join(', ')}\n\nExample: frontend, backend, qa`
+        );
+        if (!memberStr) return;
+
+        const members = memberStr.split(',').map(s => s.trim().toLowerCase()).filter(s => ROLES[s]).map(role => ({
+            role,
+            assigned: null // Will be assigned when deployed
+        }));
+
+        if (members.length === 0) {
+            showToast('❌ No valid roles entered');
+            return;
+        }
+
+        crewTemplates.push({
+            id: Date.now(),
+            name,
+            description: desc,
+            members,
+            created: Date.now()
+        });
+        localStorage.setItem('ag-crews', JSON.stringify(crewTemplates));
+        showToast(`👥 Crew "${name}" created with ${members.length} member(s)`);
+        renderCrews();
+    }
+
+    function deployCrew(index) {
+        const crew = crewTemplates[index];
+        if (!crew) return;
+        const onlineAgents = cascades.filter(c => getPhase(c.id) !== 'offline');
+        if (onlineAgents.length === 0) {
+            showToast('❌ No online agents to deploy crew');
+            return;
+        }
+        // Auto-assign roles to available agents
+        let assigned = 0;
+        crew.members.forEach((m, i) => {
+            if (i < onlineAgents.length) {
+                const agent = onlineAgents[i];
+                agentRoles[agent.id] = m.role;
+                assigned++;
+            }
+        });
+        localStorage.setItem('ag-roles', JSON.stringify(agentRoles));
+        renderFleet();
+        showToast(`👥 Crew "${crew.name}" deployed: ${assigned}/${crew.members.length} roles assigned`);
+    }
+
+    function deleteCrew(index) {
+        const crew = crewTemplates[index];
+        if (!crew) return;
+        crewTemplates.splice(index, 1);
+        localStorage.setItem('ag-crews', JSON.stringify(crewTemplates));
+        showToast(`🗑️ Crew "${crew.name}" deleted`);
+        renderCrews();
+    }
+
+    // ── Flow Pipeline Visualization ──────────────
+    let flowVisible = false;
+
+    function toggleFlowView() {
+        flowVisible = !flowVisible;
+        const overlay = $('flowOverlay');
+        if (overlay) {
+            overlay.style.display = flowVisible ? 'flex' : 'none';
+        }
+        if (flowVisible) renderFlowPipeline();
+    }
+
+    function renderFlowPipeline() {
+        const content = $('flowContent');
+        if (!content) return;
+
+        // Build flow from task history + activity log
+        const recentTasks = taskHistory.slice(0, 20);
+
+        if (recentTasks.length === 0) {
+            content.innerHTML = `<div style="text-align:center;padding:40px">
+                <div style="font-size:40px;margin-bottom:12px">🔀</div>
+                <p style="font-size:13px;color:var(--text-muted)">
+                    Send prompts to see the task flow pipeline visualized here.
+                </p>
+            </div>`;
+            return;
+        }
+
+        content.innerHTML = recentTasks.map((task, i) => {
+            const agentName = resolveAgentName(task.cascadeId);
+            const role = agentRoles[task.cascadeId];
+            const roleBadge = role && ROLES[role] ? `<span class="role-badge" style="--role-color:${ROLES[role].color}">${ROLES[role].icon}</span>` : '';
+
+            const statusClass = task.status === 'completed' ? 'flow-done'
+                : task.status === 'running' ? 'flow-running'
+                    : task.status === 'failed' ? 'flow-failed' : 'flow-pending';
+
+            const statusIcon = task.status === 'completed' ? '✅'
+                : task.status === 'running' ? '⚡'
+                    : task.status === 'failed' ? '❌' : '⏳';
+
+            const time = new Date(task.id).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const shortMsg = task.message.length > 60 ? task.message.substring(0, 60) + '…' : task.message;
+
+            return `<div class="flow-node ${statusClass}">
+                <div class="flow-node-num">${recentTasks.length - i}</div>
+                <div class="flow-node-body">
+                    <div class="flow-node-prompt">${escHtml(shortMsg)}</div>
+                    <div class="flow-node-meta">
+                        ${roleBadge}
+                        <span class="flow-agent">${escHtml(agentName)}</span>
+                        <span class="flow-status">${statusIcon} ${task.status}</span>
+                        <span class="flow-time">${time}</span>
+                    </div>
+                </div>
+                ${i < recentTasks.length - 1 ? '<div class="flow-connector"></div>' : ''}
+            </div>`;
+        }).join('');
     }
 
     // ── Task History ──────────────────────────────
@@ -1243,18 +1632,7 @@
         list.innerHTML = html;
     }
 
-    function resolveAgentName(cascadeId) {
-        if (!cascadeId || cascadeId === 'system') return 'System';
-        // Try nickname first
-        if (agentNicknames[cascadeId]) return agentNicknames[cascadeId];
-        // Try cascade title
-        const c = cascades.find(c => c.id === cascadeId);
-        if (c) return shortTitle(c.title) || 'Agent';
-        // Pending agent by port
-        const p = pendingAgents.find(p => `${p.host}:${p.port}` === cascadeId);
-        if (p) return p.name || `${p.host}:${p.port}`;
-        return cascadeId.substring(0, 12) + '…';
-    }
+    // resolveAgentName is defined above (line ~281) — single source of truth
 
     function clearActivityLog() {
         activityLog = [];
@@ -1507,6 +1885,9 @@
         if (panel === 'cron') loadCron();
         if (panel === 'remotes') loadRemotes();
         if (panel === 'activity') renderActivityLog();
+        if (panel === 'economics') renderEconomics();
+        if (panel === 'memory') renderMemory();
+        if (panel === 'crews') renderCrews();
         // On mobile, open sidebar when clicking nav items
         if (window.innerWidth <= 768) {
             document.querySelector('.sidebar')?.classList.add('open');
@@ -1731,6 +2112,7 @@
             startAutoRefresh();
         });
         renderHistory();
+        hydrateTokensFromHistory(); // Backfill token data from existing task history
         // Update auto-accept badge
         const badge = $('autoAcceptBadge');
         if (badge) badge.textContent = autoAcceptEnabled ? '🟢 ON' : '🔴 OFF';
@@ -1764,6 +2146,7 @@
             loadApprovalScreenshot,
             renderActivityLog, clearActivityLog,
             broadcastPrompt,
+            renderEconomics, renderMemory, renderCrews, showCreateCrew, deployCrew, deleteCrew, toggleFlowView,
             filterFleet, bulkScan, pickColor,
             showCtxMenu, ctxRename, ctxPin, ctxRescan, ctxScreenshot, ctxRemove,
             closeRename, saveRename, closeRemove, confirmRemove,

@@ -4,7 +4,7 @@
 
 [![Node.js](https://img.shields.io/badge/Node.js-≥18-green)](#prerequisites)
 [![License](https://img.shields.io/badge/License-MIT-blue)](#license)
-[![Version](https://img.shields.io/badge/Version-3.4.0-purple)](#)
+[![Version](https://img.shields.io/badge/Version-3.5.0-purple)](#)
 
 ---
 
@@ -20,6 +20,7 @@
 - [Telegram Bot](#telegram-bot)
 - [Automation](#automation)
 - [Remote Instances](#remote-instances)
+- [Remote Access (Tailscale)](#remote-access-tailscale)
 - [Security](#security)
 - [Architecture Deep Dive](#architecture-deep-dive)
 - [Troubleshooting](#troubleshooting)
@@ -100,6 +101,14 @@ Opengravity wraps **Antigravity IDE** (an AI coding assistant built on Claude/Ge
 - **Git** — for cloning the repo
 
 ### Steps
+
+**Option A: npx (One-Line Install)**
+
+```bash
+npx -y opengravity@latest
+```
+
+**Option B: Clone from GitHub**
 
 ```bash
 # 1. Clone the repository
@@ -806,6 +815,59 @@ For machines behind NAT without VPN:
 ### Remote Health Monitoring
 
 The dashboard's **Remotes** panel shows connection status for all configured remotes. The health monitor pings remotes every 30 seconds.
+
+---
+
+## Remote Access (Tailscale)
+
+The fastest way to access AG Mission Control from your phone or another machine — zero port forwarding, zero SSL certs, zero VPN configuration.
+
+### Prerequisites
+
+1. Install [Tailscale](https://tailscale.com/) on both your **server** machine and your **phone/laptop**
+2. Sign in with the same Tailscale account on both devices
+
+### One-Line Setup
+
+```bash
+# On your server (where Opengravity runs):
+tailscale serve --bg --https=443 http://127.0.0.1:3000
+```
+
+That's it! Your dashboard is now available at:
+
+```
+https://your-machine-name.ts.net
+```
+
+### Access from Phone
+
+1. Install the Tailscale app on your phone
+2. Sign in with the same account
+3. Open `https://your-machine-name.ts.net` in your phone browser
+4. Install as PWA for a native app experience
+
+### Multiple Instances
+
+If you run multiple Opengravity instances on different ports:
+
+```bash
+# Main dashboard on default HTTPS (443)
+tailscale serve --bg --https=443 http://127.0.0.1:3000
+
+# Second dashboard on port 8443
+tailscale serve --bg --https=8443 http://127.0.0.1:3001
+```
+
+### Security
+
+Tailscale creates a **private, encrypted tunnel** between your devices — no data goes through public internet. Only devices signed into your Tailscale account can access the dashboard. This is more secure than port forwarding or ngrok.
+
+### Disable
+
+```bash
+tailscale serve --bg --https=443 off
+```
 
 ---
 

@@ -18,7 +18,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/css/styles.css?v=16">
+    <link rel="stylesheet" href="/css/styles.css?v=19">
 </head>
 
 <body>
@@ -32,6 +32,9 @@
         <div class="nav-item" data-panel="remotes" onclick="AG.switchNav('remotes')" title="Remotes">🌐</div>
         <div class="nav-item" data-panel="history" onclick="AG.switchNav('history')" title="History">📋</div>
         <div class="nav-item" data-panel="activity" onclick="AG.switchNav('activity')" title="Activity Log">📊</div>
+        <div class="nav-item" data-panel="economics" onclick="AG.switchNav('economics')" title="Economics">💰</div>
+        <div class="nav-item" data-panel="memory" onclick="AG.switchNav('memory')" title="Agent Memory">🧠</div>
+        <div class="nav-item" data-panel="crews" onclick="AG.switchNav('crews')" title="Crew Templates">👥</div>
         <div class="nav-spacer"></div>
         <div class="nav-item" data-panel="settings" onclick="AG.switchNav('settings')" title="Settings">⚙️</div>
     </nav>
@@ -176,6 +179,66 @@
             </div>
         </div>
 
+        <!-- Economics Panel (ClawWork-inspired) -->
+        <div class="sidebar-section" data-panel="economics"
+            style="display:none;flex:1;display:flex;flex-direction:column">
+            <div class="sidebar-header">
+                <div class="sidebar-title">💰 Economics</div>
+                <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.renderEconomics()">🔄</button>
+            </div>
+            <div class="sidebar-content" style="padding:12px" id="economicsPanel">
+                <div class="econ-summary" id="econSummary">
+                    <div class="econ-card econ-total">
+                        <div class="econ-card-label">Total Tokens</div>
+                        <div class="econ-card-value" id="econ-tokens">0</div>
+                    </div>
+                    <div class="econ-card econ-cost">
+                        <div class="econ-card-label">Total Cost</div>
+                        <div class="econ-card-value" id="econ-cost">$0.00</div>
+                    </div>
+                    <div class="econ-card econ-agents">
+                        <div class="econ-card-label">Active Agents</div>
+                        <div class="econ-card-value" id="econ-agents">0</div>
+                    </div>
+                    <div class="econ-card econ-efficiency">
+                        <div class="econ-card-label">Avg Cost/Task</div>
+                        <div class="econ-card-value" id="econ-avg">$0.00</div>
+                    </div>
+                </div>
+                <div class="econ-agents-list" id="econAgentsList">
+                    <div class="panel-label" style="padding:8px 0 4px">Per-Agent Breakdown</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Memory Panel (CrewAI-inspired) -->
+        <div class="sidebar-section" data-panel="memory"
+            style="display:none;flex:1;display:flex;flex-direction:column">
+            <div class="sidebar-header">
+                <div class="sidebar-title">🧠 Agent Memory</div>
+                <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.renderMemory()">🔄</button>
+            </div>
+            <div class="sidebar-content" style="padding:12px" id="memoryPanel">
+                <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                    🧠 Agent memory & context info will appear when agents are online
+                </p>
+            </div>
+        </div>
+
+        <!-- Crew Templates Panel -->
+        <div class="sidebar-section" data-panel="crews"
+            style="display:none;flex:1;display:flex;flex-direction:column">
+            <div class="sidebar-header">
+                <div class="sidebar-title">👥 Crew Templates</div>
+                <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.showCreateCrew()">＋ New</button>
+            </div>
+            <div class="sidebar-content" style="padding:12px" id="crewsPanel">
+                <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">
+                    👥 Create crew templates to group agents for coordinated tasks
+                </p>
+            </div>
+        </div>
+
         <!-- Settings Panel (in sidebar) -->
         <div class="sidebar-section" data-panel="settings"
             style="display:none;flex:1;display:flex;flex-direction:column">
@@ -206,7 +269,7 @@
                 </div>
                 <div class="panel-section">
                     <div class="panel-label">About</div>
-                    <div class="panel-row"><span>Version</span><span class="panel-value">v3.4.0</span></div>
+                    <div class="panel-row"><span>Version</span><span class="panel-value">v3.5.0</span></div>
                     <div class="panel-row"><span>License</span><span class="panel-value">MIT</span></div>
                 </div>
             </div>
@@ -238,6 +301,7 @@
                 <button class="action-btn" id="themeToggle" onclick="AG.toggleTheme()" title="Theme">🌙</button>
                 <button class="action-btn" onclick="AG.takeScreenshot()" title="Screenshot">📸</button>
                 <button class="action-btn" onclick="AG.toggleAgentSettings()" title="Agent Settings">⚙️</button>
+                <button class="action-btn flow-btn" onclick="AG.toggleFlowView()" title="Flow Pipeline">🔀</button>
                 <button class="action-btn danger" onclick="AG.stopAgent()" title="Stop">■</button>
             </div>
         </header>
@@ -297,6 +361,19 @@
                 <button class="approval-btn deny" onclick="AG.denyConfirmation()">❌ Deny</button>
                 <button class="approval-btn preview-btn" onclick="AG.toggleApprovalPreview()"
                     title="Show screenshot">📸</button>
+            </div>
+        </div>
+
+        <!-- Flow Pipeline Overlay -->
+        <div class="flow-overlay" id="flowOverlay" style="display:none">
+            <div class="flow-header">
+                <span class="flow-title">🔀 Task Flow Pipeline</span>
+                <button class="add-ws-btn" style="font-size:11px;padding:4px 8px" onclick="AG.toggleFlowView()">✕ Close</button>
+            </div>
+            <div class="flow-content" id="flowContent">
+                <p style="font-size:12px;color:var(--text-muted);text-align:center;padding:40px">
+                    🔀 Task flow pipeline will appear here as you send prompts
+                </p>
             </div>
         </div>
 
@@ -510,7 +587,7 @@
     <!-- Cascade styles injected here -->
     <style id="cascadeStyle"></style>
 
-    <script src="/js/app.js?v=16"></script>
+    <script src="/js/app.js?v=19"></script>
 </body>
 
 </html>
