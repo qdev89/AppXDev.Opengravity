@@ -349,9 +349,28 @@ export class CDPManager extends EventEmitter {
             workbenches.forEach(t => allTargets.push({ ...t, port, host }));
         }));
 
+        // Deduplicate by port: same Antigravity instance can expose multiple targets
+        // (e.g. "Launchpad" + "ProjectName - Antigravity"). Keep the project one.
+        const byPort = new Map();
+        for (const t of allTargets) {
+            const key = `${t.host}:${t.port}`;
+            const existing = byPort.get(key);
+            if (!existing) {
+                byPort.set(key, t);
+            } else {
+                // Prefer the target with a real project title (not "Launchpad")
+                const isLaunchpad = (t.title || '').toLowerCase().includes('launchpad');
+                const existingIsLaunchpad = (existing.title || '').toLowerCase().includes('launchpad');
+                if (existingIsLaunchpad && !isLaunchpad) {
+                    byPort.set(key, t); // Replace launchpad with real project
+                }
+            }
+        }
+        const dedupedTargets = Array.from(byPort.values());
+
         const newCascades = new Map();
 
-        for (const target of allTargets) {
+        for (const target of dedupedTargets) {
             const id = this.hashString(target.webSocketDebuggerUrl);
 
             if (this.cascades.has(id)) {
