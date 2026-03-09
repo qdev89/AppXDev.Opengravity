@@ -12,7 +12,7 @@
  * On Unix: uses spawn with detached:true.
  */
 import { spawn, execSync } from 'child_process';
-import { existsSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync, readdirSync, rmSync, readFileSync, copyFileSync } from 'fs';
 import { join } from 'path';
 import * as http from 'http';
 import { log as logger } from './gateway/logger.js';
@@ -53,6 +53,23 @@ function isAntigravityRunning() {
     } catch { return false; }
 }
 
+/**
+ * Locate the main Antigravity user profile directory.
+ * Returns the path to the "User" folder or null if not found.
+ */
+function findMainProfile() {
+    const appData = process.env.APPDATA || '';
+    const candidates = [
+        join(appData, 'Antigravity', 'User'),
+        join(appData, 'Antigravity IDE', 'User'),
+        join(appData, 'Code', 'User'),
+    ];
+    for (const p of candidates) {
+        if (existsSync(p)) return p;
+    }
+    return null;
+}
+
 export class Launcher {
     constructor(opts = {}) {
         this.cmd = opts.cmd || process.env.ANTIGRAVITY_CMD || null;
@@ -85,7 +102,9 @@ export class Launcher {
 
     /**
      * Prepare user-data-dir for an isolated instance.
-     * Clears stale Electron lock files so we don't get code 9 failures.
+     * - Clears stale Electron lock files so we don't get code 9 failures.
+     * - Copies settings.json from the main profile on first launch.
+     * - Ensures onboarding is skipped by injecting the right flags.
      */
     _prepareProfile(port) {
         const home = process.env.USERPROFILE || process.env.HOME || '';
@@ -96,6 +115,81 @@ export class Launcher {
         for (const lock of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
             const lockPath = join(profileDir, lock);
             try { rmSync(lockPath, { force: true }); } catch { }
+        }
+
+        // ── Bootstrap settings from main Antigravity profile ──
+        const profileUserDir = join(profileDir, 'User');
+        mkdirSync(profileUserDir, { recursive: true });
+        const isolatedSettingsPath = join(profileUserDir, 'settings.json');
+
+        if (!existsSync(isolatedSettingsPath)) {
+            // First launch: copy settings from main profile
+            const mainProfile = findMainProfile();
+            if (mainProfile) {
+                const mainSettingsPath = join(mainProfile, 'settings.json');
+                if (existsSync(mainSettingsPath)) {
+                    try {
+                        copyFileSync(mainSettingsPath, isolatedSettingsPath);
+                        log.info(`Copied settings.json from main profile to port-${port}`);
+                    } catch (err) {
+                        log.warn(`Failed to copy settings.json: ${err.message}`);
+                    }
+                }
+
+                // Also copy keybindings if available
+                const mainKeybindingsPath = join(mainProfile, 'keybindings.json');
+                const isolatedKeybindingsPath = join(profileUserDir, 'keybindings.json');
+                if (existsSync(mainKeybindingsPath) && !existsSync(isolatedKeybindingsPath)) {
+                    try {
+                        copyFileSync(mainKeybindingsPath, isolatedKeybindingsPath);
+                        log.info(`Copied keybindings.json from main profile to port-${port}`);
+                    } catch { }
+                }
+
+                // Copy snippets directory
+                const mainSnippetsDir = join(mainProfile, 'snippets');
+                const isolatedSnippetsDir = join(profileUserDir, 'snippets');
+                if (existsSync(mainSnippetsDir) && !existsSync(isolatedSnippetsDir)) {
+                    try {
+                        mkdirSync(isolatedSnippetsDir, { recursive: true });
+                        for (const f of readdirSync(mainSnippetsDir)) {
+                            copyFileSync(join(mainSnippetsDir, f), join(isolatedSnippetsDir, f));
+                        }
+                        log.info(`Copied snippets from main profile to port-${port}`);
+                    } catch { }
+                }
+            }
+        }
+
+        // ── Ensure onboarding-skip flags are always set ──
+        try {
+            let settings = {};
+            if (existsSync(isolatedSettingsPath)) {
+                settings = JSON.parse(readFileSync(isolatedSettingsPath, 'utf-8'));
+            }
+            let modified = false;
+
+            // Skip welcome/onboarding walkthrough
+            const skipFlags = {
+                'workbench.welcome.enabled': false,
+                'workbench.startupEditor': 'none',
+                'workbench.tips.enabled': false,
+                'update.showReleaseNotes': false,
+                'telemetry.telemetryLevel': 'off',
+            };
+            for (const [key, val] of Object.entries(skipFlags)) {
+                if (settings[key] === undefined) {
+                    settings[key] = val;
+                    modified = true;
+                }
+            }
+
+            if (modified) {
+                writeFileSync(isolatedSettingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+                log.info(`Injected onboarding-skip settings for port-${port}`);
+            }
+        } catch (err) {
+            log.warn(`Failed to patch onboarding settings: ${err.message}`);
         }
 
         return profileDir;
@@ -113,10 +207,10 @@ export class Launcher {
             const profileDir = this._prepareProfile(port);
             args.push(`--user-data-dir=${profileDir}`);
 
-            // CRITICAL: Disable ALL extensions — some extensions (e.g. AG Auto Click & Scroll)
-            // start their own CDP listeners which hijack and kill the main CDP connection.
-            // A clean instance without extensions is required for reliable CDP control.
-            args.push('--disable-extensions');
+            // NOTE: We no longer use --disable-extensions globally.
+            // Extensions are kept so the IDE works normally (settings, theme, etc.)
+            // If specific extensions cause CDP conflicts, disable them individually
+            // via settings.json instead.
 
             args.push('--no-sandbox');
         }
